@@ -46,6 +46,12 @@ class Document(Base):
     parser: Mapped[str | None] = mapped_column(String(50), nullable=True)
     strategy: Mapped[str | None] = mapped_column(String(50), nullable=True)
 
+    # Identifiant de la tâche Celery associée (permet GET /jobs/{task_id})
+    task_id: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
+
+    # Compteur de tentatives automatiques (beat : retry_error_documents)
+    retry_count: Mapped[int] = mapped_column(Integer, default=0)
+
     # Résultat
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
     ingested_at: Mapped[datetime | None] = mapped_column(

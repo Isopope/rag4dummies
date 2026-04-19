@@ -55,8 +55,12 @@ def create_app() -> FastAPI:
             "**Endpoints principaux :**\n"
             "- `POST /query` — Requête synchrone\n"
             "- `POST /query/stream` — Streaming SSE nœud par nœud\n"
-            "- `POST /ingest/pdf` — Ingestion d'un PDF\n"
-            "- `POST /ingest/jsonl` — Ingestion d'un JSONL pré-chunké\n"
+            "- `POST /ingest/pdf` — Ingestion asynchrone d'un PDF (retourne task_id)\n"
+            "- `POST /ingest/jsonl` — Ingestion asynchrone d'un JSONL pré-chunké\n"
+            "- `GET /jobs/{task_id}` — Suivi de l'état d'une tâche d'ingestion\n"
+            "- `POST /connectors/local` — Scan d'un répertoire local / NFS\n"
+            "- `POST /connectors/web` — Crawl de pages web via Playwright\n"
+            "- `POST /connectors/sharepoint` — Sync SharePoint / OneDrive\n"
             "- `GET /sources` — Liste des documents indexés\n"
             "- `POST /feedback` — Enregistrer un feedback utilisateur\n"
             "- `GET /feedback` — Lister les conversations notées\n\n"
@@ -77,12 +81,14 @@ def create_app() -> FastAPI:
     )
 
     # ── Routers ───────────────────────────────────────────────────────────────
-    from .routers import ingest, query, sources, feedback, documents
-    app.include_router(query.router,     prefix="/query",     tags=["query"])
-    app.include_router(ingest.router,    prefix="/ingest",    tags=["ingest"])
-    app.include_router(sources.router,   prefix="/sources",   tags=["sources"])
-    app.include_router(feedback.router,  prefix="/feedback",  tags=["feedback"])
-    app.include_router(documents.router, prefix="/documents", tags=["documents"])
+    from .routers import ingest, query, sources, feedback, documents, jobs, connectors
+    app.include_router(query.router,      prefix="/query",      tags=["query"])
+    app.include_router(ingest.router,     prefix="/ingest",     tags=["ingest"])
+    app.include_router(sources.router,    prefix="/sources",    tags=["sources"])
+    app.include_router(feedback.router,   prefix="/feedback",   tags=["feedback"])
+    app.include_router(documents.router,  prefix="/documents",  tags=["documents"])
+    app.include_router(jobs.router,       prefix="/jobs",       tags=["jobs"])
+    app.include_router(connectors.router, prefix="/connectors", tags=["connectors"])
 
     # ── Health check ──────────────────────────────────────────────────────────
     @app.get("/health", tags=["health"], summary="Statut de l'API")

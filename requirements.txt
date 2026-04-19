@@ -41,6 +41,10 @@ pymupdf>=1.23
 # Object storage (MinIO / S3-compatible) — visual grounding
 minio>=7.2
 
+# Queue de tâches asynchrones (ingestion industrielle)
+celery[redis]>=5.3
+redis>=5.0
+
 #openingestion
 openingestion[mineru]
 

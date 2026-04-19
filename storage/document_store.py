@@ -49,6 +49,10 @@ class DocumentStore(ABC):
         """Supprime un fichier du store."""
 
     @abstractmethod
+    def download(self, object_key: str) -> bytes:
+        """Télécharge un fichier et retourne son contenu en bytes."""
+
+    @abstractmethod
     def exists(self, object_key: str) -> bool:
         """Vérifie si un fichier existe dans le store."""
 
@@ -101,6 +105,12 @@ class LocalDocumentStore(DocumentStore):
         if path.exists():
             path.unlink()
             logger.debug("LocalStore: supprimé → {}", path)
+
+    def download(self, object_key: str) -> bytes:
+        path = self._dir / object_key
+        if not path.is_file():
+            raise FileNotFoundError(f"LocalStore: fichier introuvable → {path}")
+        return path.read_bytes()
 
     def exists(self, object_key: str) -> bool:
         return (self._dir / object_key).is_file()
@@ -177,6 +187,14 @@ class MinioDocumentStore(DocumentStore):
     def delete(self, object_key: str) -> None:
         self._client.remove_object(self._bucket, object_key)
         logger.debug("MinIO: supprimé → {}/{}", self._bucket, object_key)
+
+    def download(self, object_key: str) -> bytes:
+        response = self._client.get_object(self._bucket, object_key)
+        try:
+            return response.read()
+        finally:
+            response.close()
+            response.release_conn()
 
     def exists(self, object_key: str) -> bool:
         try:

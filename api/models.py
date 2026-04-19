@@ -76,6 +76,31 @@ class StreamEvent(BaseModel):
 
 # ── Réponses ingestion ─────────────────────────────────────────────────────────
 
+class IngestJobResponse(BaseModel):
+    """Réponse immédiate après soumission d'une ingestion asynchrone."""
+    task_id: str = Field(..., description="Identifiant de la tâche Celery")
+    status: str  = Field("pending", description="pending | processing | indexed | error")
+    source: str  = Field(..., description="Clé de l'objet dans le DocumentStore")
+    filename: str
+    pdf_url: Optional[str] = Field(
+        None, description="URL présignée du PDF (valide ~1h) — disponible immédiatement"
+    )
+    chunk_count: int = 0
+    error: Optional[str] = None
+
+
+class JobStatusResponse(BaseModel):
+    """Réponse de GET /jobs/{task_id} — état courant de la tâche."""
+    task_id: str
+    celery_state: str = Field(..., description="PENDING | STARTED | SUCCESS | FAILURE | RETRY")
+    status: str       = Field(..., description="pending | processing | indexed | error | unknown")
+    source: Optional[str]   = None
+    filename: Optional[str] = None
+    chunk_count: int  = 0
+    pdf_url: Optional[str]  = None
+    error: Optional[str]    = None
+
+
 class IngestResponse(BaseModel):
     n_chunks: int
     source: str
@@ -84,6 +109,52 @@ class IngestResponse(BaseModel):
         None,
         description="URL pour accéder au PDF ingéré (présignée MinIO ou endpoint local)",
     )
+
+
+# ── Connecteurs (crawl) ────────────────────────────────────────────────────────
+
+class CrawlLocalRequest(BaseModel):
+    directory: str  = Field(..., description="Chemin absolu du répertoire à scanner")
+    ext: list[str]  = Field([".pdf"], description="Extensions acceptées")
+    recursive: bool = Field(True, description="Descendre dans les sous-répertoires")
+    parser: str     = Field("docling", description="docling | mineru | simple")
+    strategy: str   = Field("by_token", description="by_token | by_sentence | by_block")
+
+
+class CrawlWebRequest(BaseModel):
+    urls: list[str] = Field(..., min_length=1, description="URLs à crawler (Playwright → PDF)")
+    output_dir: str = Field("./tmp/web_fetch", description="Répertoire temporaire de sortie")
+    mode: str       = Field("pdf", description="pdf | html")
+    parser: str     = Field("docling", description="docling | mineru | simple")
+    strategy: str   = Field("by_token", description="by_token | by_sentence | by_block")
+
+
+class CrawlSharepointRequest(BaseModel):
+    site_url: Optional[str]  = Field(None, description="URL complète du site SharePoint")
+    site_name: Optional[str] = Field(None, description="Nom court du site (alternatif à site_url)")
+    folder_path: Optional[str] = Field(None, description="Sous-dossier à indexer (None = racine)")
+    output_dir: str  = Field("./tmp/sharepoint_fetch", description="Répertoire de téléchargement")
+    parser: str      = Field("docling", description="docling | mineru | simple")
+    strategy: str    = Field("by_token", description="by_token | by_sentence | by_block")
+    # Credentials optionnels — sinon lus depuis les variables d'environnement
+    client_id: Optional[str]     = Field(None, description="App Registration client_id (Entra ID)")
+    client_secret: Optional[str] = Field(None, description="App Registration client_secret")
+    tenant_id: Optional[str]     = Field(None, description="Tenant ID Azure AD")
+
+
+class CrawlTaskItem(BaseModel):
+    """Un document découvert et dispatché par un crawl."""
+    object_key: str
+    task_id: str
+    source_label: str
+
+
+class CrawlJobResponse(BaseModel):
+    """Réponse d'un endpoint /connectors/* — résumé du crawl lancé."""
+    crawl_task_id: str = Field(..., description="Identifiant de la tâche de crawl Celery")
+    status: str        = Field("queued", description="queued — le crawl est en cours")
+    connector: str     = Field(..., description="local | web | sharepoint")
+    message: str       = Field("", description="Description de la demande")
 
 
 # ── Réponses sources ───────────────────────────────────────────────────────────

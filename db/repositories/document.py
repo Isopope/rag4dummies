@@ -25,6 +25,7 @@ class DocumentRepository:
         *,
         parser: str | None = None,
         strategy: str | None = None,
+        task_id: str | None = None,
     ) -> Document:
         """Crée ou récupère un Document pour ce source_path, statut PENDING.
 
@@ -38,6 +39,7 @@ class DocumentRepository:
                 status      = DocumentStatus.PENDING,
                 parser      = parser,
                 strategy    = strategy,
+                task_id     = task_id,
             )
             self._session.add(doc)
             await self._session.flush()
@@ -48,6 +50,8 @@ class DocumentRepository:
             doc.chunk_count   = 0
             doc.parser        = parser or doc.parser
             doc.strategy      = strategy or doc.strategy
+            if task_id:
+                doc.task_id = task_id
         return doc
 
     async def mark_processing(self, source_path: str) -> Document | None:
@@ -85,6 +89,12 @@ class DocumentRepository:
         )
         return result.scalar_one_or_none()
 
+    async def get_by_task_id(self, task_id: str) -> Document | None:
+        result = await self._session.execute(
+            select(Document).where(Document.task_id == task_id)
+        )
+        return result.scalar_one_or_none()
+
     async def list_all(
         self,
         status: str | None = None,
@@ -111,3 +121,33 @@ class DocumentRepository:
             return False
         await self._session.delete(doc)
         return True
+
+    # ── Méthodes pour les tâches beat ─────────────────────────────────────────
+
+    async def list_by_status_before(
+        self, status: str, cutoff: datetime
+    ) -> list[Document]:
+        """Retourne les documents d'un statut donné dont updated_at < cutoff."""
+        result = await self._session.execute(
+            select(Document)
+            .where(Document.status == status)
+            .where(Document.updated_at < cutoff)
+        )
+        return list(result.scalars().all())
+
+    async def list_by_status_retry_lt(
+        self, status: str, max_retry: int
+    ) -> list[Document]:
+        """Retourne les documents d'un statut donné avec retry_count < max_retry."""
+        result = await self._session.execute(
+            select(Document)
+            .where(Document.status == status)
+            .where(Document.retry_count < max_retry)
+        )
+        return list(result.scalars().all())
+
+    async def increment_retry_count(self, source_path: str) -> None:
+        """Incrémente le compteur de tentatives automatiques d'un document."""
+        doc = await self.get_by_source(source_path)
+        if doc is not None:
+            doc.retry_count = (doc.retry_count or 0) + 1
