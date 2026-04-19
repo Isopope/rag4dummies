@@ -92,6 +92,8 @@ def _ingest_with_openingestion(
             "html":          html,
             "captions_json": _json.dumps(captions,  ensure_ascii=False),
             "footnotes_json":_json.dumps(footnotes, ensure_ascii=False),
+            # coordonnées de tous les blocs du chunk : [[page, x0, y0, x1, y1], ...]
+            "bboxes_json":   _json.dumps(c.position_int or [], ensure_ascii=False),
         })
 
     texts = [d["page_content"] for d in chunk_dicts]
@@ -152,6 +154,8 @@ def _ingest_simple(
                 "html":          "",
                 "captions_json": "[]",
                 "footnotes_json":"[]",
+                # pas de bbox en mode fallback simple (extraction PyMuPDF page-level)
+                "bboxes_json":   "[]",
             })
             idx += 1
 
@@ -174,6 +178,7 @@ def ingest_pdf(
     parser: str = "docling",
     progress_cb: Callable[[str], None] | None = None,
     force_simple: bool = False,
+    source_override: str | None = None,
 ) -> int:
     """Parse un PDF, embed ses chunks via OpenAI Embeddings et les stocke dans Weaviate.
 
@@ -195,6 +200,11 @@ def ingest_pdf(
         Callback appelé avec des messages de progression (pour l'UI).
     force_simple:
         Si True, utilise le mode PyMuPDF même si openingestion est dispo.
+    source_override:
+        Si renseigné, remplace la valeur par défaut (chemin absolu du PDF)
+        pour le champ ``source`` stocké dans Weaviate.  Utilisé par l'API
+        pour stocker la clé MinIO (ex. ``abc12345-mon-doc.pdf``) plutôt que
+        le chemin local éphémère.
 
     Returns
     -------
@@ -202,7 +212,7 @@ def ingest_pdf(
         Nombre de chunks stockés.
     """
     _cb = progress_cb or (lambda msg: logger.info(msg))
-    source = str(pdf_path.resolve())
+    source = source_override or str(pdf_path.resolve())
 
     # Supprimer les éventuels chunks existants pour ce fichier
     weaviate_store.delete_source(source)
@@ -319,6 +329,8 @@ def ingest_jsonl(
             "html":          html,
             "captions_json": _json.dumps(captions, ensure_ascii=False),
             "footnotes_json": "[]",
+            # coordonnées de tous les blocs du chunk : [[page, x0, y0, x1, y1], ...]
+            "bboxes_json":   _json.dumps(pos, ensure_ascii=False),
         })
 
     texts = [d["page_content"] for d in chunk_dicts]

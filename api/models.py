@@ -16,6 +16,19 @@ class QueryRequest(BaseModel):
 
 # ── Modèles de données ─────────────────────────────────────────────────────────
 
+class BboxModel(BaseModel):
+    """Coordonnées d'un bloc dans le PDF source (visual grounding).
+
+    Système de coordonnées : origine haut-gauche, unité points PDF (1 pt = 1/72").
+    Correspond à un élément de ``position_int`` produit par openingestion.
+    """
+    page: int = Field(..., description="Numéro de page (0-indexé)")
+    x0: int = Field(..., description="Abscisse gauche")
+    y0: int = Field(..., description="Ordonnée haut")
+    x1: int = Field(..., description="Abscisse droite")
+    y1: int = Field(..., description="Ordonnée bas")
+
+
 class ChunkModel(BaseModel):
     source: str
     page_content: str
@@ -25,6 +38,14 @@ class ChunkModel(BaseModel):
     chunk_index: int = 0
     rerank_score: Optional[float] = None
     score: Optional[float] = None
+    bboxes: list[BboxModel] = Field(
+        default_factory=list,
+        description="Localisation dans le PDF source — liste de boîtes englobantes",
+    )
+    pdf_url: Optional[str] = Field(
+        None,
+        description="URL présignée pour télécharger le PDF source (valide ~1h)",
+    )
 
 
 # ── Réponses query ─────────────────────────────────────────────────────────────
@@ -59,6 +80,10 @@ class IngestResponse(BaseModel):
     n_chunks: int
     source: str
     filename: str
+    pdf_url: Optional[str] = Field(
+        None,
+        description="URL pour accéder au PDF ingéré (présignée MinIO ou endpoint local)",
+    )
 
 
 # ── Réponses sources ───────────────────────────────────────────────────────────

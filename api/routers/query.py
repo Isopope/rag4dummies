@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from concurrent.futures import ThreadPoolExecutor
 from typing import AsyncGenerator
 
@@ -9,12 +10,31 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import StreamingResponse
 from loguru import logger
 
-from ..deps import get_agent
-from ..models import ChunkModel, QueryRequest, QueryResponse, StreamEvent
+from ..deps import get_agent, get_document_store
+from ..models import BboxModel, ChunkModel, QueryRequest, QueryResponse, StreamEvent
 
 router = APIRouter()
 
 _THREAD_POOL = ThreadPoolExecutor(max_workers=4, thread_name_prefix="rag-query")
+
+
+def _parse_bboxes(raw: str | None) -> list[BboxModel]:
+    """Désérialise bboxes_json → list[BboxModel].
+
+    Format attendu : [[page, x0, y0, x1, y1], ...]
+    Tolère les valeurs None / malformées (renvoie [] silencieusement).
+    """
+    if not raw:
+        return []
+    try:
+        entries = json.loads(raw)
+        return [
+            BboxModel(page=b[0], x0=b[1], y0=b[2], x1=b[3], y1=b[4])
+            for b in entries
+            if isinstance(b, (list, tuple)) and len(b) == 5
+        ]
+    except (json.JSONDecodeError, (IndexError, TypeError)):
+        return []
 
 
 def _chunk_to_model(doc: dict) -> ChunkModel:
@@ -27,7 +47,31 @@ def _chunk_to_model(doc: dict) -> ChunkModel:
         chunk_index  = doc.get("chunk_index", 0),
         rerank_score = doc.get("_rerank_score"),
         score        = doc.get("_score"),
+        bboxes       = _parse_bboxes(doc.get("bboxes_json")),
     )
+
+
+def _add_pdf_urls(chunks: list[ChunkModel], doc_store, expires_seconds: int = 3600) -> list[ChunkModel]:
+    """Génère une presigned URL par source unique et l'affecte à chaque chunk.
+
+    Silencieux en cas d'erreur (MinIO indisponible → pdf_url reste None).
+    """
+    import os
+    expires = int(os.getenv("MINIO_PRESIGN_EXPIRES", str(expires_seconds)))
+    url_cache: dict[str, str] = {}
+    for chunk in chunks:
+        source = chunk.source
+        if not source:
+            continue
+        if source not in url_cache:
+            try:
+                url_cache[source] = doc_store.presigned_url(source, expires_seconds=expires)
+            except Exception as exc:
+                logger.warning("Impossible de générer la presigned URL pour '{}' : {}", source, exc)
+                url_cache[source] = ""
+        if url_cache[source]:
+            chunk.pdf_url = url_cache[source]
+    return chunks
 
 
 # ── POST /query — synchrone ────────────────────────────────────────────────────
@@ -41,6 +85,7 @@ def _chunk_to_model(doc: dict) -> ChunkModel:
 async def query(
     body: QueryRequest,
     agent=Depends(get_agent),
+    doc_store=Depends(get_document_store),
 ) -> QueryResponse:
     loop = asyncio.get_event_loop()
     try:
@@ -55,11 +100,16 @@ async def query(
             detail=str(exc),
         )
 
+    sources = _add_pdf_urls(
+        [_chunk_to_model(d) for d in result.get("sources", [])],
+        doc_store,
+    )
+
     return QueryResponse(
         question_id             = result.get("question_id", ""),
         question                = body.question,
         answer                  = result.get("answer", ""),
-        sources                 = [_chunk_to_model(d) for d in result.get("sources", [])],
+        sources                 = sources,
         follow_up_suggestions   = result.get("follow_up_suggestions", []),
         conversation_title      = result.get("conversation_title"),
         n_retrieved             = result.get("n_retrieved", 0),
@@ -83,6 +133,7 @@ async def query(
 async def query_stream(
     body: QueryRequest,
     agent=Depends(get_agent),
+    doc_store=Depends(get_document_store),
 ):
     loop = asyncio.get_event_loop()
     queue: asyncio.Queue = asyncio.Queue()
@@ -147,7 +198,10 @@ async def query_stream(
                     evt.answer = answer
 
                 if "reranked_docs" in state_update:
-                    sources      = [_chunk_to_model(d) for d in state_update["reranked_docs"]]
+                    sources      = _add_pdf_urls(
+                        [_chunk_to_model(d) for d in state_update["reranked_docs"]],
+                        doc_store,
+                    )
                     evt.sources  = sources
 
                 if "follow_up_suggestions" in state_update:

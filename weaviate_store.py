@@ -72,6 +72,7 @@ class WeaviateStore:
     def _ensure_schema(self) -> None:
         if self._client.collections.exists(COLLECTION_NAME):
             logger.debug("Collection {} déjà présente.", COLLECTION_NAME)
+            self._migrate_schema()
             return
 
         self._client.collections.create(
@@ -122,9 +123,32 @@ class WeaviateStore:
                     index_searchable=False,
                     skip_vectorization=True,
                 ),
+                # ── coordonnées de localisation dans le PDF (visual grounding) ─
+                # Format JSON : [[page, x0, y0, x1, y1], ...]  (points PDF, origine haut-gauche)
+                Property(
+                    name="bboxes_json",
+                    data_type=DataType.TEXT,
+                    index_searchable=False,
+                    skip_vectorization=True,
+                ),
             ],
         )
         logger.info("Collection {} créée.", COLLECTION_NAME)
+
+    def _migrate_schema(self) -> None:
+        """Ajoute les propriétés manquantes à une collection existante (migration non-destructive)."""
+        collection = self._client.collections.get(COLLECTION_NAME)
+        existing_props = {p.name for p in collection.config.get().properties}
+        if "bboxes_json" not in existing_props:
+            collection.config.add_property(
+                Property(
+                    name="bboxes_json",
+                    data_type=DataType.TEXT,
+                    index_searchable=False,
+                    skip_vectorization=True,
+                )
+            )
+            logger.info("Propriété bboxes_json ajoutée à la collection {}.", COLLECTION_NAME)
 
     def reset_collection(self) -> None:
         """Supprime et recrée la collection (dev / tests)."""

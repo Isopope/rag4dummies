@@ -94,3 +94,19 @@ def reset_agent() -> None:
 # ── Base de données (re-export pour les routers) ───────────────────────────────
 
 from db.engine import get_db_session as get_db_session  # noqa: E402, F401
+
+# ── Document Store — MinIO ou local (singleton processus) ─────────────────────
+
+_document_store = None
+
+
+def get_document_store():
+    """
+    Retourne le DocumentStore singleton (MinioDocumentStore ou LocalDocumentStore
+    selon la variable d'environnement MINIO_ENDPOINT).
+    """
+    global _document_store
+    if _document_store is None:
+        from storage import make_document_store
+        _document_store = make_document_store()
+    return _document_store

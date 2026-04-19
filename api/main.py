@@ -77,11 +77,12 @@ def create_app() -> FastAPI:
     )
 
     # ── Routers ───────────────────────────────────────────────────────────────
-    from .routers import ingest, query, sources, feedback
-    app.include_router(query.router,    prefix="/query",    tags=["query"])
-    app.include_router(ingest.router,   prefix="/ingest",   tags=["ingest"])
-    app.include_router(sources.router,  prefix="/sources",  tags=["sources"])
-    app.include_router(feedback.router, prefix="/feedback", tags=["feedback"])
+    from .routers import ingest, query, sources, feedback, documents
+    app.include_router(query.router,     prefix="/query",     tags=["query"])
+    app.include_router(ingest.router,    prefix="/ingest",    tags=["ingest"])
+    app.include_router(sources.router,   prefix="/sources",   tags=["sources"])
+    app.include_router(feedback.router,  prefix="/feedback",  tags=["feedback"])
+    app.include_router(documents.router, prefix="/documents", tags=["documents"])
 
     # ── Health check ──────────────────────────────────────────────────────────
     @app.get("/health", tags=["health"], summary="Statut de l'API")

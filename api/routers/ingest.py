@@ -2,24 +2,23 @@
 from __future__ import annotations
 
 import asyncio
+import os
+import tempfile
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
 from loguru import logger
 
-from ..deps import get_config, get_store
+from ..deps import get_config, get_document_store, get_store
 from ..models import IngestResponse
+from storage import DocumentStore
 
 router = APIRouter()
 
 _THREAD_POOL = ThreadPoolExecutor(max_workers=2, thread_name_prefix="rag-ingest")
 
-UPLOADS_DIR   = Path(__file__).parent.parent.parent / "uploads"
-UPLOADS_DIR.mkdir(exist_ok=True)
-
 _MAX_FILE_SIZE = 100 * 1024 * 1024  # 100 MB
-_ALLOWED_EXTENSIONS = {".pdf", ".jsonl"}
 
 
 def _check_file_size(content: bytes, filename: str) -> None:
@@ -45,7 +44,11 @@ def _check_extension(filename: str, allowed: set[str]) -> None:
     "/pdf",
     response_model=IngestResponse,
     summary="Ingérer un PDF",
-    description="Upload un fichier PDF, l'analyse, embed les chunks via OpenAI et les stocke dans Weaviate.",
+    description=(
+        "Upload un fichier PDF, l'analyse, embed les chunks via OpenAI et les stocke dans Weaviate. "
+        "Le PDF est conservé dans l'object store (MinIO ou local) ; la réponse inclut une ``pdf_url`` "
+        "utilisable par le frontend pour le visual grounding."
+    ),
 )
 async def ingest_pdf(
     file:     UploadFile = File(..., description="Fichier PDF à indexer"),
@@ -53,6 +56,7 @@ async def ingest_pdf(
     strategy: str        = Form("by_token", description="Stratégie de découpage : by_token | by_sentence | by_block"),
     store=Depends(get_store),
     cfg=Depends(get_config),
+    doc_store: DocumentStore = Depends(get_document_store),
 ) -> IngestResponse:
     if parser not in ("docling", "mineru", "simple"):
         raise HTTPException(status_code=400, detail="parser doit être : docling | mineru | simple")
@@ -64,32 +68,49 @@ async def ingest_pdf(
     content = await file.read()
     _check_file_size(content, filename)
 
-    dest = UPLOADS_DIR / filename
-    dest.write_bytes(content)
+    # Clé déterministe : {sha256_8chars}-{nom_safe}.pdf
+    object_key = DocumentStore.make_object_key(filename, content)
+
+    # Upload dans l'object store (MinIO ou local)
+    doc_store.upload(content, object_key, content_type="application/pdf")
+
+    # L'ingestor a besoin du fichier sur disque pour le parser — tmpfile éphémère
+    with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp:
+        tmp.write(content)
+        tmp_path = Path(tmp.name)
 
     loop = asyncio.get_event_loop()
     try:
         n = await loop.run_in_executor(
             _THREAD_POOL,
-            lambda: _run_ingest_pdf(dest, store, cfg, parser, strategy),
+            lambda: _run_ingest_pdf(tmp_path, store, cfg, parser, strategy, source_override=object_key),
         )
     except Exception as exc:
         logger.exception("Erreur ingestion PDF '{}' : {}", filename, exc)
         raise HTTPException(status_code=500, detail=str(exc))
+    finally:
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass
 
-    return IngestResponse(n_chunks=n, source=str(dest), filename=filename)
+    expires = int(os.getenv("MINIO_PRESIGN_EXPIRES", "3600"))
+    pdf_url = doc_store.presigned_url(object_key, expires_seconds=expires)
+
+    return IngestResponse(n_chunks=n, source=object_key, filename=filename, pdf_url=pdf_url)
 
 
-def _run_ingest_pdf(dest: Path, store, cfg, parser: str, strategy: str) -> int:
+def _run_ingest_pdf(dest: Path, store, cfg, parser: str, strategy: str, source_override: str | None = None) -> int:
     from ingestor import ingest_pdf as _ingest_pdf
     return _ingest_pdf(
-        pdf_path         = dest,
-        weaviate_store   = store,
-        openai_key       = cfg.openai_key,
-        embedding_model  = cfg.embedding_model,
-        chunking_strategy= strategy,
-        parser           = parser if parser != "simple" else "docling",
-        force_simple     = (parser == "simple"),
+        pdf_path          = dest,
+        weaviate_store    = store,
+        openai_key        = cfg.openai_key,
+        embedding_model   = cfg.embedding_model,
+        chunking_strategy = strategy,
+        parser            = parser if parser != "simple" else "docling",
+        force_simple      = (parser == "simple"),
+        source_override   = source_override,
     )
 
 
@@ -112,20 +133,27 @@ async def ingest_jsonl(
     content = await file.read()
     _check_file_size(content, filename)
 
-    dest = UPLOADS_DIR / filename
-    dest.write_bytes(content)
+    with tempfile.NamedTemporaryFile(suffix=".jsonl", delete=False) as tmp:
+        tmp.write(content)
+        tmp_path = Path(tmp.name)
 
     loop = asyncio.get_event_loop()
     try:
         n = await loop.run_in_executor(
             _THREAD_POOL,
-            lambda: _run_ingest_jsonl(dest, store, cfg, source_override.strip() or None),
+            lambda: _run_ingest_jsonl(tmp_path, store, cfg, source_override.strip() or None),
         )
     except Exception as exc:
         logger.exception("Erreur ingestion JSONL '{}' : {}", filename, exc)
         raise HTTPException(status_code=500, detail=str(exc))
+    finally:
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass
 
-    return IngestResponse(n_chunks=n, source=str(dest), filename=filename)
+    effective_source = source_override.strip() or filename
+    return IngestResponse(n_chunks=n, source=effective_source, filename=filename)
 
 
 def _run_ingest_jsonl(dest: Path, store, cfg, source_override: str | None) -> int:
@@ -137,3 +165,4 @@ def _run_ingest_jsonl(dest: Path, store, cfg, source_override: str | None) -> in
         embedding_model = cfg.embedding_model,
         source_override = source_override,
     )
+
