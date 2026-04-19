@@ -23,10 +23,7 @@ from pydantic import BaseModel, Field, field_validator
 def make_llm_caller(client, model: str, timeout: float) -> Callable:
     """Retourne une fonction d'appel LLM via LiteLLM avec timeout."""
     def _call(messages: list, **kwargs) -> Any:
-        import sys
-        import os
-        sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-        from llm import get_llm_completion
+        from llm.factory import get_llm_completion
         
         # LITELLM automatically manages providers
         api_key = getattr(client, "api_key", None) if client else None
@@ -52,10 +49,7 @@ def make_llm_caller(client, model: str, timeout: float) -> Callable:
 
 def make_embedder(client, model: str, timeout: float) -> Callable:
     """Retourne une fonction d'embedding via LiteLLM."""
-    import sys
-    import os
-    sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-    from llm import make_embedder as get_embedder_factory
+    from llm.factory import make_embedder as get_embedder_factory
     
     return get_embedder_factory(client, model, timeout)
 

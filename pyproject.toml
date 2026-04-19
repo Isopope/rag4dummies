@@ -1,0 +1,8 @@
+[project]
+name = "brh-rag"
+version = "1.0.0"
+description = "RAG Agent POC"
+requires-python = ">=3.10"
+
+[tool.setuptools.packages.find]
+include = ["llm*", "rag_agent*", "api*", "db*", "worker*"]

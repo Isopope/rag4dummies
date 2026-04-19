@@ -261,6 +261,17 @@ def create_unified_state(
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
 
+def _seen_keys_contains(keys: list, key: tuple) -> bool:
+    """Vérifie si une paire (source_path, chunk_index) est dans seen_keys (list of lists)."""
+    return list(key) in keys
+
+def _seen_keys_add(keys: list, key: tuple) -> list:
+    """Ajoute une paire à seen_keys si elle n'y est pas, et retourne la liste."""
+    entry = list(key)
+    if entry not in keys:
+        keys.append(entry)
+    return keys
+
 def log_entry(step: str, message: str, metadata: Optional[dict] = None) -> dict:
     """Crée une entrée de log structurée pour decision_log."""
     return {

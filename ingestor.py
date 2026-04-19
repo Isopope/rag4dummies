@@ -27,23 +27,18 @@ def _embed_texts(
     openai.embeddings.create accepte jusqu'à 2048 textes par appel.
     Les textes vides sont remplacés par un espace pour éviter les erreurs.
     """
-    from openai import OpenAI
+    from llm.embedder import EmbeddingModel
 
-    client = OpenAI(api_key=openai_key)
-    # OpenAI rejette les chaînes vides — on les remplace par un espace
-    sanitized = [t if t and t.strip() else " " for t in texts]
-    vectors: list[list[float]] = []
-    total = len(sanitized)
-
-    for i in range(0, total, batch_size):
-        batch = sanitized[i : i + batch_size]
-        result = client.embeddings.create(model=model, input=batch)
-        # Les embeddings sont retournés dans l'ordre des entrées (triés par index)
-        vectors.extend([e.embedding for e in sorted(result.data, key=lambda e: e.index)])
-        if progress_cb:
-            progress_cb(f"  Embedding {min(i + batch_size, total)}/{total}…")
-
-    return vectors
+    embedder = EmbeddingModel(
+        model=model,
+        api_key=openai_key,
+        # Timeout will use default, batch size is handled inside EmbeddingModel automatically
+    )
+    
+    if progress_cb:
+        progress_cb(f"  Embedding de {len(texts)} chunks…")
+        
+    return embedder.embed_batch(texts)
 
 
 # ── mode openingestion ────────────────────────────────────────────────────────
