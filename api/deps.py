@@ -89,3 +89,8 @@ def reset_agent() -> None:
     """Force la recréation de l'agent (ex : après changement de clé API)."""
     global _agent
     _agent = None
+
+
+# ── Base de données (re-export pour les routers) ───────────────────────────────
+
+from db.engine import get_db_session as get_db_session  # noqa: E402, F401

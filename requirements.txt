@@ -4,6 +4,9 @@ weaviate-client>=4.5,<5.0
 # LLM + Embeddings (OpenAI)
 openai>=1.50
 
+# LLM agnostique (LiteLLM — supporte OpenAI, Mistral, Anthropic, Ollama…)
+litellm>=1.40
+
 # Agent RAG (LangGraph)
 langgraph>=0.2
 pydantic>=2.0
@@ -11,7 +14,19 @@ pydantic>=2.0
 # Reranking optionnel (Cohere)
 # cohere>=5.0
 
-# UI
+# API REST
+fastapi>=0.111
+uvicorn[standard]>=0.29
+python-multipart>=0.0.9
+
+# Base de données (SQLAlchemy async + Alembic)
+sqlalchemy[asyncio]>=2.0
+alembic>=1.13
+aiosqlite>=0.20         # driver SQLite async (dev / tests)
+asyncpg>=0.29           # driver PostgreSQL async (production)
+psycopg2-binary>=2.9    # driver sync PostgreSQL requis par Alembic
+
+# UI Streamlit (mode POC — optionnel en production)
 streamlit>=1.32
 
 # Config

@@ -27,6 +27,17 @@ async def lifespan(app: FastAPI):
     except Exception as exc:
         logger.warning("Weaviate non disponible au démarrage : {}", exc)
 
+    # Crée les tables SQLite si elles n'existent pas (mode dev)
+    # En prod PostgreSQL, utiliser : alembic upgrade head
+    db_url = os.getenv("DATABASE_URL", "sqlite+aiosqlite:///./rag.db")
+    if db_url.startswith("sqlite"):
+        from db import create_all_tables
+        try:
+            await create_all_tables()
+            logger.info("Tables SQLite créées / vérifiées.")
+        except Exception as exc:
+            logger.warning("Impossible de créer les tables SQLite : {}", exc)
+
     yield
 
     # ── Shutdown ──────────────────────────────────────────────────────────────
@@ -47,6 +58,9 @@ def create_app() -> FastAPI:
             "- `POST /ingest/pdf` — Ingestion d'un PDF\n"
             "- `POST /ingest/jsonl` — Ingestion d'un JSONL pré-chunké\n"
             "- `GET /sources` — Liste des documents indexés\n"
+            "- `POST /feedback` — Enregistrer un feedback utilisateur\n"
+            "- `GET /feedback` — Lister les conversations notées\n\n"
+            f"Base de données : `{os.getenv('DATABASE_URL', 'sqlite+aiosqlite:///./rag.db')}`"
         ),
         version="1.0.0",
         lifespan=lifespan,
@@ -63,10 +77,11 @@ def create_app() -> FastAPI:
     )
 
     # ── Routers ───────────────────────────────────────────────────────────────
-    from .routers import ingest, query, sources
-    app.include_router(query.router,   prefix="/query",   tags=["query"])
-    app.include_router(ingest.router,  prefix="/ingest",  tags=["ingest"])
-    app.include_router(sources.router, prefix="/sources", tags=["sources"])
+    from .routers import ingest, query, sources, feedback
+    app.include_router(query.router,    prefix="/query",    tags=["query"])
+    app.include_router(ingest.router,   prefix="/ingest",   tags=["ingest"])
+    app.include_router(sources.router,  prefix="/sources",  tags=["sources"])
+    app.include_router(feedback.router, prefix="/feedback", tags=["feedback"])
 
     # ── Health check ──────────────────────────────────────────────────────────
     @app.get("/health", tags=["health"], summary="Statut de l'API")

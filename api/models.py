@@ -72,3 +72,41 @@ class SourceItem(BaseModel):
 class SourcesResponse(BaseModel):
     sources: list[SourceItem]
     total_chunks: int
+
+
+# ── Feedback ───────────────────────────────────────────────────────────────────
+
+class FeedbackRequest(BaseModel):
+    """Corps de la requête POST /feedback.
+
+    Envoyé depuis l'UI quand l'utilisateur note et commente une réponse LLM.
+    """
+    question_id: str = Field(..., description="Identifiant unique de la question (UnifiedRAGState.question_id)")
+    question: str = Field(..., min_length=1, max_length=4000, description="Question posée")
+    answer: str = Field(..., min_length=1, description="Réponse du LLM")
+    rating: int = Field(..., ge=1, le=5, description="Note de 1 (mauvais) à 5 (excellent)")
+    comment: Optional[str] = Field(None, description="Commentaire libre de l'utilisateur")
+    user_id: str = Field("anonymous", description="Identifiant de l'utilisateur")
+    conversation_title: Optional[str] = Field(None, description="Titre généré par le LLM")
+    sources: list[ChunkModel] = Field(default_factory=list, description="Documents sources utilisés")
+    decision_log: list[dict[str, Any]] = Field(default_factory=list, description="Journal des décisions de l'agent")
+    follow_up_suggestions: list[str] = Field(default_factory=list, description="Suggestions de questions de suivi")
+    n_retrieved: int = Field(0, ge=0, description="Nombre de chunks récupérés")
+
+
+class FeedbackResponse(BaseModel):
+    """Réponse après enregistrement du feedback."""
+    conversation_id: str
+    message_id: str
+    rating: int
+    comment: Optional[str] = None
+
+
+class ConversationItem(BaseModel):
+    """Vue synthétique d'une conversation pour la liste GET /feedback."""
+    conversation_id: str
+    user_id: str
+    title: Optional[str] = None
+    question_id: Optional[str] = None
+    created_at: str
+    message_count: int
