@@ -7,7 +7,7 @@ from pathlib import Path
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
 from loguru import logger
 
-from ..deps import get_db_session, get_document_store
+from ..deps import get_celery_app, get_db_session, get_document_store
 from ..models import IngestJobResponse
 from storage import DocumentStore
 
@@ -49,8 +49,8 @@ def _check_extension(filename: str, allowed: set[str]) -> None:
 )
 async def ingest_pdf(
     file:     UploadFile = File(..., description="Fichier PDF à indexer"),
-    parser:   str        = Form("docling",  description="Parser : docling | mineru | simple"),
-    strategy: str        = Form("by_token", description="Stratégie de découpage : by_token | by_sentence | by_block"),
+    parser:   str        = Form("mineru",      description="Parser : docling | mineru | simple"),
+    strategy: str        = Form("by_sentence", description="Stratégie de découpage : by_token | by_sentence | by_block"),
     doc_store: DocumentStore = Depends(get_document_store),
     db=Depends(get_db_session),
 ) -> IngestJobResponse:
@@ -70,9 +70,10 @@ async def ingest_pdf(
     doc_store.upload(content, object_key, content_type="application/pdf")
 
     # 2. Dispatcher la tâche Celery
-    from worker.tasks.ingest import ingest_pdf_task
     from worker.queues import INGEST_QUEUE, RagCeleryPriority
-    job = ingest_pdf_task.apply_async(
+    celery = get_celery_app()
+    job = celery.send_task(
+        "rag.tasks.ingest_pdf",
         args     = [object_key, parser, strategy, filename],
         queue    = INGEST_QUEUE,
         priority = int(RagCeleryPriority.HIGH),
@@ -123,9 +124,10 @@ async def ingest_jsonl(
 
     doc_store.upload(content, object_key, content_type="application/x-ndjson")
 
-    from worker.tasks.ingest import ingest_jsonl_task
     from worker.queues import INGEST_QUEUE, RagCeleryPriority
-    job = ingest_jsonl_task.apply_async(
+    celery = get_celery_app()
+    job = celery.send_task(
+        "rag.tasks.ingest_jsonl",
         args     = [object_key, effective_source, filename],
         queue    = INGEST_QUEUE,
         priority = int(RagCeleryPriority.HIGH),

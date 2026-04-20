@@ -49,8 +49,8 @@ def make_llm_caller(client, model: str, timeout: float) -> Callable:
 
 def make_embedder(client, model: str, timeout: float) -> Callable:
     """Retourne une fonction d'embedding via LiteLLM."""
-    from llm.factory import make_embedder as get_embedder_factory
-    
+    from llm.embedder import make_embedder as get_embedder_factory
+
     return get_embedder_factory(client, model, timeout)
 
 def _strip_fences(text: str) -> str:

@@ -110,3 +110,21 @@ def get_document_store():
         from storage import make_document_store
         _document_store = make_document_store()
     return _document_store
+
+
+# ── Celery client (singleton processus) ───────────────────────────────────────
+
+_celery_app = None
+
+
+def get_celery_app():
+    """Retourne l'instance Celery singleton utilisée comme client par l'API."""
+    global _celery_app
+    if _celery_app is None:
+        from worker.app import celery_app
+        _celery_app = celery_app
+        logger.info(
+            "Client Celery initialisé — broker={}",
+            _celery_app.conf.broker_url,
+        )
+    return _celery_app
