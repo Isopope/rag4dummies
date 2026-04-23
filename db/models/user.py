@@ -1,28 +1,25 @@
-"""Modèle User — stub pour authentification future."""
+"""Modèle User — authentification via fastapi-users."""
 from __future__ import annotations
 
-import uuid
-from datetime import datetime, timezone
+from datetime import datetime
 
+from fastapi_users.db import SQLAlchemyBaseUserTableUUID
 from sqlalchemy import DateTime, String, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from .base import Base
 
 
-class User(Base):
-    """Table users — réservée à l'authentification future.
+class User(SQLAlchemyBaseUserTableUUID, Base):
+    """Table users.
 
-    Dans la version actuelle, les conversations utilisent ``user_id``
-    comme simple chaîne (ex : 'anonymous') sans relation FK.
+    Hérite de SQLAlchemyBaseUserTableUUID qui fournit :
+        id, email, hashed_password, is_active, is_superuser, is_verified
+    Champs personnalisés :
+        role, created_at
     """
     __tablename__ = "users"
 
-    id: Mapped[uuid.UUID] = mapped_column(
-        primary_key=True, default=uuid.uuid4
-    )
-    email: Mapped[str] = mapped_column(String(320), unique=True, index=True)
-    hashed_password: Mapped[str] = mapped_column(String(1024))
     role: Mapped[str] = mapped_column(String(50), default="user")
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),

@@ -18,6 +18,7 @@ pydantic>=2.0
 fastapi>=0.111
 uvicorn[standard]>=0.29
 python-multipart>=0.0.9
+fastapi-users[sqlalchemy]>=13.0  # authentification JWT Bearer
 
 # Base de données (SQLAlchemy async + Alembic)
 sqlalchemy[asyncio]>=2.0
