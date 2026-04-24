@@ -8,6 +8,8 @@ Embeddings : OpenAI Embeddings (text-embedding-3-small, text-embedding-3-large, 
 """
 from __future__ import annotations
 
+import shutil
+import tempfile
 from pathlib import Path
 from typing import Callable
 
@@ -55,7 +57,23 @@ def _ingest_with_openingestion(
     from openingestion import ingest
 
     progress_cb(f"Parsing '{pdf_path.name}' avec {parser} / {strategy}…")
-    chunks = ingest(pdf_path, parser=parser, strategy=strategy, image_mode="path")
+
+    # Dossier output isolé par ingestion → évite toute collision si deux tâches
+    # tournent en parallèle ou si un retry intervient pendant une autre ingestion.
+    # MinerU 3.x écrit toujours dans output_dir/doc0/auto/ ; sans isolation,
+    # le dossier est écrasé entre deux tâches et la seconde lit le contenu de la première.
+    mineru_tmp = Path(tempfile.mkdtemp(prefix="mineru_out_"))
+    try:
+        chunks = ingest(
+            pdf_path,
+            parser=parser,
+            strategy=strategy,
+            image_mode="path",
+            mineru_output_dir=mineru_tmp,
+        )
+    finally:
+        shutil.rmtree(mineru_tmp, ignore_errors=True)
+
     progress_cb(f"{len(chunks)} chunks extraits.")
 
     import json as _json

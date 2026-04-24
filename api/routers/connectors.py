@@ -20,6 +20,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException, status
 
+from ..deps import get_celery_app
 from ..models import (
     CrawlJobResponse,
     CrawlLocalRequest,
@@ -50,10 +51,10 @@ async def crawl_local(body: CrawlLocalRequest) -> CrawlJobResponse:
     if body.strategy not in ("by_token", "by_sentence", "by_block"):
         raise HTTPException(status_code=400, detail="strategy doit être : by_token | by_sentence | by_block")
 
-    from worker.tasks.connectors import crawl_local_task
     from worker.queues import LIGHT_QUEUE, RagCeleryPriority
 
-    job = crawl_local_task.apply_async(
+    job = get_celery_app().send_task(
+        "rag.tasks.crawl_local",
         kwargs   = {
             "directory": body.directory,
             "ext":       body.ext,
@@ -95,10 +96,10 @@ async def crawl_web(body: CrawlWebRequest) -> CrawlJobResponse:
     if body.strategy not in ("by_token", "by_sentence", "by_block"):
         raise HTTPException(status_code=400, detail="strategy doit être : by_token | by_sentence | by_block")
 
-    from worker.tasks.connectors import crawl_web_task
     from worker.queues import LIGHT_QUEUE, RagCeleryPriority
 
-    job = crawl_web_task.apply_async(
+    job = get_celery_app().send_task(
+        "rag.tasks.crawl_web",
         kwargs   = {
             "urls":       body.urls,
             "output_dir": body.output_dir,
@@ -145,10 +146,10 @@ async def crawl_sharepoint(body: CrawlSharepointRequest) -> CrawlJobResponse:
     if body.strategy not in ("by_token", "by_sentence", "by_block"):
         raise HTTPException(status_code=400, detail="strategy doit être : by_token | by_sentence | by_block")
 
-    from worker.tasks.connectors import crawl_sharepoint_task
     from worker.queues import LIGHT_QUEUE, RagCeleryPriority
 
-    job = crawl_sharepoint_task.apply_async(
+    job = get_celery_app().send_task(
+        "rag.tasks.crawl_sharepoint",
         kwargs   = {
             "site_url":     body.site_url,
             "site_name":    body.site_name,

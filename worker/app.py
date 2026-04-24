@@ -2,6 +2,14 @@
 from __future__ import annotations
 
 import os
+import sys
+from pathlib import Path
+
+# Garantit que la racine du projet est dans sys.path quelle que soit
+# la façon dont le worker est lancé (PYTHONPATH non défini, etc.)
+_PROJECT_ROOT = str(Path(__file__).resolve().parent.parent)
+if _PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, _PROJECT_ROOT)
 
 from celery import Celery
 from celery.signals import worker_ready, worker_shutdown
