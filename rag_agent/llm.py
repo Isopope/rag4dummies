@@ -27,7 +27,12 @@ def make_llm_caller(client, model: str, timeout: float) -> Callable:
         
         # LITELLM automatically manages providers
         api_key = getattr(client, "api_key", None) if client else None
+        _base   = getattr(client, "base_url", None) if client else None
+        api_base = str(_base) if _base is not None else None
         
+        # `timeout` peut être passé par l'appelant pour surcharger la valeur par défaut
+        effective_timeout = kwargs.pop("timeout", timeout)
+
         # Extraire `response_format` si nécessaire pour la compatibilité avec certains modèles (comme OpenAI)
         response_format = kwargs.pop("response_format", None)
         
@@ -38,8 +43,9 @@ def make_llm_caller(client, model: str, timeout: float) -> Callable:
         resp = get_llm_completion(
             model=model,
             messages=messages,
-            timeout=timeout,
+            timeout=effective_timeout,
             api_key=api_key,
+            api_base=api_base,
             **kwargs
         )
         return resp

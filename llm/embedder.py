@@ -130,9 +130,10 @@ def make_embedder(client: Optional[Any], model: str, timeout: float = 60.0) -> C
     Backward compatible factory function.
     Returns a function that embeds a single string as a PASSAGE.
     """
-    api_key = getattr(client, "api_key", None) if client else None
-    api_base = getattr(client, "base_url", None) if client else None
-    
+    api_key  = getattr(client, "api_key", None) if client else None
+    _base    = getattr(client, "base_url", None) if client else None
+    api_base = str(_base) if _base is not None else None
+
     model_instance = EmbeddingModel(
         model=model,
         api_key=api_key,
