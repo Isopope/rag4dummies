@@ -47,13 +47,7 @@ celery[redis]>=5.3
 redis>=5.0
 
 #openingestion
-openingestion[mineru]
+openingestion[mineru]>=0.1.3
 
-# ─────────────────────────────────────────────────
-# openingestion (pipeline d'ingestion principal)
-# Installer depuis le dossier parent en dehors de ce requirements.txt :
-#
-#   pip install -e "../openingestion"
-#   # ou avec le support docling :
-#   pip install -e "../openingestion[docling]"
-# ─────────────────────────────────────────────────
+# connectors
+playwright>=1.42
