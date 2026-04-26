@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useCallback, FormEvent, KeyboardEvent } from 'react';
 import { ArrowUp, Square, PlusCircle } from 'lucide-react';
 import { ChatInputImagePreview } from './ChatInputImagePreview';
-import { ChatInputModelSelect, MOCK_MODELS } from './ChatInputModelSelect';
+import { ChatInputModelSelect } from './ChatInputModelSelect';
 import { useImageUpload, type UploadedImage } from '@/hooks/use-image-upload';
 import { cn } from '@/lib/utils';
 
@@ -30,8 +30,8 @@ const ChatInput = ({
   onStopGenerating,
 }: ChatInputProps) => {
   const [message, setMessage] = useState('');
-  const [modelId, setModelId] = useState(MOCK_MODELS[0].id);
   const [isDragging, setIsDragging] = useState(false);
+  const [modelId, setModelId] = useState('');
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const wrapperRef = useRef<HTMLDivElement>(null);
   const dropZoneRef = useRef<HTMLDivElement>(null);
@@ -162,7 +162,7 @@ const ChatInput = ({
 
             {/* Bottom controls bar */}
             <div className="flex items-center justify-between px-2 pb-2">
-              {/* Left: attach + model */}
+              {/* Left: attach + model selector */}
               <div className="flex items-center gap-1">
                 <button
                   type="button"

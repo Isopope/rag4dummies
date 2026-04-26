@@ -1,5 +1,5 @@
-import { useRef, useEffect, useMemo } from 'react';
-import { Bot, Sparkles } from 'lucide-react';
+import { useRef, useEffect, useMemo, useState, useCallback } from 'react';
+import { Bot, Sparkles, ArrowDown } from 'lucide-react';
 import { ChatMessage, MessageFeedback } from '@/types/chat';
 import MessageRenderer from './MessageRenderer';
 import FollowUpSuggestions from './FollowUpSuggestions';
@@ -170,10 +170,29 @@ const ChatArea = ({
   onShowSources,
 }: ChatAreaProps) => {
   const bottomRef = useRef<HTMLDivElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
   const greeting = useMemo(getGreeting, []);
+  const [showScrollBtn, setShowScrollBtn] = useState(false);
+
+  const scrollToBottom = useCallback(() => {
+    bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, []);
+
+  const handleScroll = useCallback(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+    setShowScrollBtn(distanceFromBottom > 120);
+  }, []);
 
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+    // Auto-scroll only when already near the bottom
+    const el = containerRef.current;
+    if (!el) return;
+    const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+    if (distanceFromBottom < 120) {
+      bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }
   }, [messages, isTyping]);
 
   if (messages.length === 0) {
@@ -181,24 +200,41 @@ const ChatArea = ({
   }
 
   return (
-    <div className="flex-1 overflow-y-auto scrollbar-thin">
-      <div className="mx-auto w-full max-w-[var(--app-page-main-content-width)] py-6 px-4 space-y-6">
-        {messages.map((msg) =>
-          msg.role === 'user' ? (
-            <UserMessage key={msg.id} msg={msg} />
-          ) : (
-            <AssistantMessage
-              key={msg.id}
-              msg={msg}
-              onFeedback={onFeedback}
-              onRegenerate={onRegenerate}
-              onShowSources={onShowSources}
-              onSelectSuggestion={onSelectSuggestion}
-            />
-          ),
-        )}
-        <div ref={bottomRef} />
+    <div className="relative flex-1 overflow-hidden">
+      <div
+        ref={containerRef}
+        onScroll={handleScroll}
+        className="h-full overflow-y-auto scrollbar-thin"
+      >
+        <div className="mx-auto w-full max-w-[var(--app-page-main-content-width)] py-6 px-4 space-y-6">
+          {messages.map((msg) =>
+            msg.role === 'user' ? (
+              <UserMessage key={msg.id} msg={msg} />
+            ) : (
+              <AssistantMessage
+                key={msg.id}
+                msg={msg}
+                onFeedback={onFeedback}
+                onRegenerate={onRegenerate}
+                onShowSources={onShowSources}
+                onSelectSuggestion={onSelectSuggestion}
+              />
+            ),
+          )}
+          <div ref={bottomRef} />
+        </div>
       </div>
+
+      {/* Scroll-to-bottom floating button */}
+      {showScrollBtn && (
+        <button
+          onClick={scrollToBottom}
+          className="absolute bottom-4 right-4 z-10 flex items-center justify-center w-8 h-8 rounded-full bg-background border border-border shadow-md text-muted-foreground hover:text-foreground hover:shadow-lg transition-all animate-fade-in"
+          title="Retour en bas"
+        >
+          <ArrowDown className="w-4 h-4" />
+        </button>
+      )}
     </div>
   );
 };

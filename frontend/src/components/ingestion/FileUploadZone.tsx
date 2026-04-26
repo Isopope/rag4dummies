@@ -1,10 +1,13 @@
 import { useRef, useCallback } from 'react';
-import { Upload, File, CheckCircle2, Loader2, AlertCircle } from 'lucide-react';
+import { Upload, File, CheckCircle2, Loader2, AlertCircle, Trash2 } from 'lucide-react';
 import { UploadedFile } from '@/types/chat';
+import type { DocumentItem } from '@/lib/api';
 
 interface FileUploadZoneProps {
   files: UploadedFile[];
+  documents: DocumentItem[];
   onUpload?: (file: File) => void;
+  onDelete?: (sourcePath: string) => void;
 }
 
 const statusIcon: Record<string, React.FC<{ className?: string }>> = {
@@ -28,8 +31,10 @@ const statusColor: Record<string, string> = {
   error: 'text-destructive',
 };
 
-const FileUploadZone = ({ files, onUpload }: FileUploadZoneProps) => {
+const FileUploadZone = ({ files, documents, onUpload, onDelete }: FileUploadZoneProps) => {
   const inputRef = useRef<HTMLInputElement>(null);
+  // Lookup rapide sourcePath par id
+  const docById = Object.fromEntries(documents.map((d) => [d.id, d]));
 
   const handleFiles = useCallback(
     (fileList: FileList | null) => {
@@ -82,6 +87,7 @@ const FileUploadZone = ({ files, onUpload }: FileUploadZoneProps) => {
           <h3 className="text-sm font-semibold text-foreground">Fichiers récents</h3>
           {files.map((file) => {
             const Icon = statusIcon[file.status];
+            const doc = docById[file.id];
             return (
               <div key={file.id} className="flex items-center gap-3 p-3 rounded-lg border border-border bg-card">
                 <File className="w-8 h-8 text-primary/60 shrink-0" />
@@ -89,6 +95,11 @@ const FileUploadZone = ({ files, onUpload }: FileUploadZoneProps) => {
                   <p className="text-sm font-medium text-card-foreground truncate">{file.name}</p>
                   <div className="flex items-center gap-2 mt-0.5">
                     <span className="text-[11px] text-muted-foreground">{file.size}</span>
+                    {doc?.error_message && (
+                      <span className="text-[11px] text-destructive truncate max-w-[200px]" title={doc.error_message}>
+                        {doc.error_message}
+                      </span>
+                    )}
                     {file.progress !== undefined && file.status !== 'indexed' && (
                       <div className="flex-1 max-w-[120px] h-1.5 bg-muted rounded-full overflow-hidden">
                         <div
@@ -103,6 +114,15 @@ const FileUploadZone = ({ files, onUpload }: FileUploadZoneProps) => {
                   <Icon className={`w-3.5 h-3.5 ${file.status === 'processing' || file.status === 'uploading' ? 'animate-spin' : ''}`} />
                   {statusLabel[file.status]}
                 </div>
+                {onDelete && doc && (
+                  <button
+                    onClick={() => onDelete(doc.source_path)}
+                    className="ml-1 p-1 rounded hover:bg-muted text-muted-foreground hover:text-destructive transition-colors"
+                    title="Supprimer"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                )}
               </div>
             );
           })}

@@ -48,6 +48,7 @@ export interface QueryRequest {
   source_filter?: string;
   conversation_summary?: string;
   session_id?: string;
+  model?: string;
 }
 
 export interface QueryResponse {
@@ -126,7 +127,30 @@ export interface LoginResponse {
   token_type: string;
 }
 
-// ── Auth ──────────────────────────────────────────────────────────────────────
+// ── Modèles LLM ───────────────────────────────────────────────────────────────
+
+export interface ModelInfo {
+  id: string;
+  label: string;
+  provider: string;
+}
+
+export interface ModelsResponse {
+  models: ModelInfo[];
+  default: string;
+}
+
+export async function getModels(): Promise<ModelsResponse> {
+  const res = await fetch(`${BASE}/models`);
+  await assertOk(res);
+  return res.json();
+}
+
+export interface UserInfo {
+  id: string;
+  email: string;
+  role: string;
+}
 
 export async function login(email: string, password: string): Promise<LoginResponse> {
   const form = new URLSearchParams({ username: email, password });
@@ -137,6 +161,23 @@ export async function login(email: string, password: string): Promise<LoginRespo
   });
   await assertOk(res);
   return res.json();
+}
+
+export async function getMe(token: string): Promise<UserInfo> {
+  const res = await fetch(`${BASE}/users/me`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  await assertOk(res);
+  return res.json();
+}
+
+export async function register(email: string, password: string): Promise<void> {
+  const res = await fetch(`${BASE}/auth/register`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email, password }),
+  });
+  await assertOk(res);
 }
 
 // ── Query (sync) ──────────────────────────────────────────────────────────────
@@ -217,13 +258,43 @@ export async function uploadPDF(
 
 // ── Jobs ──────────────────────────────────────────────────────────────────────
 
-export async function getJobStatus(taskId: string): Promise<JobStatusResponse> {
-  const res = await fetch(`${BASE}/jobs/${taskId}`, { headers: jsonHeaders() });
+export async function getJobStatus(taskId: string, token: string): Promise<JobStatusResponse> {
+  const res = await fetch(`${BASE}/jobs/${taskId}`, { headers: jsonHeaders(token) });
   await assertOk(res);
   return res.json();
 }
 
 // ── Sources ───────────────────────────────────────────────────────────────────
+
+export interface DocumentItem {
+  id: string;
+  filename: string;
+  source_path: string;
+  status: 'pending' | 'processing' | 'indexed' | 'error';
+  chunk_count: number;
+  parser: string | null;
+  strategy: string | null;
+  task_id: string | null;
+  created_at: string;
+  ingested_at: string | null;
+  error_message: string | null;
+}
+
+export async function listDocuments(token: string, status?: string, limit = 100): Promise<DocumentItem[]> {
+  const params = new URLSearchParams({ limit: String(limit) });
+  if (status) params.set('status', status);
+  const res = await fetch(`${BASE}/documents?${params}`, { headers: jsonHeaders(token) });
+  await assertOk(res);
+  return res.json();
+}
+
+export async function deleteDocument(sourcePath: string, token: string): Promise<void> {
+  const res = await fetch(`${BASE}/documents/${encodeURIComponent(sourcePath)}`, {
+    method: 'DELETE',
+    headers: jsonHeaders(token),
+  });
+  await assertOk(res);
+}
 
 export async function listSources(): Promise<SourcesResponse> {
   const res = await fetch(`${BASE}/sources`, { headers: jsonHeaders() });
@@ -270,32 +341,99 @@ export interface SessionDetail {
   messages: SessionMessage[];
 }
 
-export async function listSessions(userId = 'anonymous', limit = 50): Promise<SessionItem[]> {
-  const params = new URLSearchParams({ user_id: userId, limit: String(limit) });
-  const res = await fetch(`${BASE}/sessions?${params}`, { headers: jsonHeaders() });
+export async function listSessions(token: string, limit = 50): Promise<SessionItem[]> {
+  const params = new URLSearchParams({ limit: String(limit) });
+  const res = await fetch(`${BASE}/sessions?${params}`, { headers: jsonHeaders(token) });
   await assertOk(res);
   return res.json();
 }
 
-export async function getSession(sessionId: string): Promise<SessionDetail> {
-  const res = await fetch(`${BASE}/sessions/${sessionId}`, { headers: jsonHeaders() });
+export async function getSession(sessionId: string, token: string): Promise<SessionDetail> {
+  const res = await fetch(`${BASE}/sessions/${sessionId}`, { headers: jsonHeaders(token) });
   await assertOk(res);
   return res.json();
 }
 
-export async function deleteSession(sessionId: string): Promise<void> {
+export async function deleteSession(sessionId: string, token: string): Promise<void> {
   const res = await fetch(`${BASE}/sessions/${sessionId}`, {
     method: 'DELETE',
-    headers: jsonHeaders(),
+    headers: jsonHeaders(token),
   });
   await assertOk(res);
 }
 
-export async function renameSession(sessionId: string, title: string): Promise<SessionItem> {
+export async function renameSession(sessionId: string, title: string, token: string): Promise<SessionItem> {
   const res = await fetch(`${BASE}/sessions/${sessionId}`, {
     method: 'PATCH',
-    headers: jsonHeaders(),
+    headers: jsonHeaders(token),
     body: JSON.stringify({ title }),
+  });
+  await assertOk(res);
+  return res.json();
+}
+
+// ── Connectors (crawl) ────────────────────────────────────────────────────────
+
+export interface CrawlLocalRequest {
+  directory: string;
+  ext: string[];
+  recursive: boolean;
+  parser: string;
+  strategy: string;
+}
+
+export interface CrawlWebRequest {
+  urls: string[];
+  output_dir?: string;
+  mode: 'pdf' | 'html';
+  parser: string;
+  strategy: string;
+}
+
+export interface CrawlSharepointRequest {
+  site_url?: string;
+  site_name?: string;
+  folder_path?: string;
+  output_dir?: string;
+  parser: string;
+  strategy: string;
+  client_id?: string;
+  client_secret?: string;
+  tenant_id?: string;
+}
+
+export interface CrawlJobResponse {
+  crawl_task_id: string;
+  status: string;
+  connector: string;
+  message: string;
+}
+
+export async function crawlLocal(body: CrawlLocalRequest, token: string): Promise<CrawlJobResponse> {
+  const res = await fetch(`${BASE}/connectors/local`, {
+    method: 'POST',
+    headers: jsonHeaders(token),
+    body: JSON.stringify(body),
+  });
+  await assertOk(res);
+  return res.json();
+}
+
+export async function crawlWeb(body: CrawlWebRequest, token: string): Promise<CrawlJobResponse> {
+  const res = await fetch(`${BASE}/connectors/web`, {
+    method: 'POST',
+    headers: jsonHeaders(token),
+    body: JSON.stringify(body),
+  });
+  await assertOk(res);
+  return res.json();
+}
+
+export async function crawlSharepoint(body: CrawlSharepointRequest, token: string): Promise<CrawlJobResponse> {
+  const res = await fetch(`${BASE}/connectors/sharepoint`, {
+    method: 'POST',
+    headers: jsonHeaders(token),
+    body: JSON.stringify(body),
   });
   await assertOk(res);
   return res.json();

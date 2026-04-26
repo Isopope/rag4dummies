@@ -1,22 +1,25 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { listSessions, deleteSession, renameSession, getSession } from '@/lib/api';
 import type { SessionItem, SessionDetail } from '@/lib/api';
+import { useAuth } from '@/context/AuthContext';
 import { toast } from 'sonner';
 
 const SESSIONS_KEY = ['sessions'];
 
-export function useSessions(userId = 'anonymous') {
+export function useSessions() {
   const queryClient = useQueryClient();
+  const { token } = useAuth();
 
   const query = useQuery<SessionItem[]>({
     queryKey: SESSIONS_KEY,
-    queryFn: () => listSessions(userId),
+    queryFn: () => listSessions(token!),
+    enabled: !!token,
     staleTime: 30_000,
     refetchOnWindowFocus: false,
   });
 
   const deleteMutation = useMutation({
-    mutationFn: (sessionId: string) => deleteSession(sessionId),
+    mutationFn: (sessionId: string) => deleteSession(sessionId, token!),
     onSuccess: (_data, sessionId) => {
       queryClient.setQueryData<SessionItem[]>(SESSIONS_KEY, (prev) =>
         prev ? prev.filter((s) => s.id !== sessionId) : [],
@@ -28,7 +31,7 @@ export function useSessions(userId = 'anonymous') {
 
   const renameMutation = useMutation({
     mutationFn: ({ sessionId, title }: { sessionId: string; title: string }) =>
-      renameSession(sessionId, title),
+      renameSession(sessionId, title, token!),
     onSuccess: (updated) => {
       queryClient.setQueryData<SessionItem[]>(SESSIONS_KEY, (prev) =>
         prev ? prev.map((s) => (s.id === updated.id ? updated : s)) : [],
@@ -64,10 +67,11 @@ export function useSessions(userId = 'anonymous') {
 }
 
 export function useSessionDetail(sessionId: string | null) {
+  const { token } = useAuth();
   return useQuery<SessionDetail>({
     queryKey: ['session', sessionId],
-    queryFn: () => getSession(sessionId!),
-    enabled: !!sessionId,
+    queryFn: () => getSession(sessionId!, token!),
+    enabled: !!sessionId && !!token,
     staleTime: 60_000,
   });
 }

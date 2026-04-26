@@ -11,13 +11,14 @@ import type { ChatMessage, ChatSession, MessageFeedback, MessageSource } from '@
 import { useRagQuery } from '@/hooks/use-rag-query';
 import { useSessions } from '@/hooks/use-sessions';
 import { useIngest } from '@/hooks/use-ingest';
-import { useSources } from '@/hooks/use-sources';
+import { useDocuments } from '@/hooks/use-documents';
 import { getSession } from '@/lib/api';
-import { mockConnectors } from '@/data/mockData';
+import { useAuth } from '@/context/AuthContext';
 
 const CHAT_ID_PARAM = 'chat-id';
 
 const Index = () => {
+  const { isAdmin, token } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
   const [activeView, setActiveView] = useState<'chat' | 'ingestion'>('chat');
   const [documentSidebar, setDocumentSidebar] = useState<{
@@ -29,7 +30,7 @@ const Index = () => {
     useRagQuery();
   const { sessions, deleteSession: doDelete, renameSession: doRename, refresh: refreshSessions } = useSessions();
   const { files, upload } = useIngest();
-  const { data: sourcesData } = useSources();
+  const { documents, deleteDocument: doDeleteDoc } = useDocuments();
 
   // -- URL → state : charger la session indiquée dans l'URL au montage (ou au changement de param) --
   const initialLoadDone = useRef(false);
@@ -42,7 +43,7 @@ const Index = () => {
     if (initialLoadDone.current) return;
     initialLoadDone.current = true;
 
-    getSession(urlChatId)
+    getSession(urlChatId, token!)
       .then((detail) => loadSession(detail))
       .catch(() => {
         // Session invalide ou supprimée → nettoyer l'URL
@@ -135,7 +136,7 @@ const Index = () => {
     async (id: string) => {
       if (id === activeSessionId) return;
       try {
-        const detail = await getSession(id);
+        const detail = await getSession(id, token!);
         loadSession(detail);
         setDocumentSidebar(null);
         refreshSessions();
@@ -177,7 +178,11 @@ const Index = () => {
   return (
     <AppLayout
       activeView={activeView}
-      onViewChange={setActiveView}
+      onViewChange={(view) => {
+        // Seuls les admins peuvent accéder à la vue ingestion
+        if (view === 'ingestion' && !isAdmin) return;
+        setActiveView(view);
+      }}
       sidebar={
         <ChatSidebar
           sessions={displayedSessions}
@@ -221,10 +226,10 @@ const Index = () => {
         </div>
       ) : (
         <IngestionPage
-          connectors={mockConnectors}
-          files={files}
+          uploadingFiles={files}
+          documents={documents}
           onUpload={upload}
-          totalIndexedChunks={sourcesData?.total_chunks ?? 0}
+          onDeleteDocument={doDeleteDoc}
         />
       )}
     </AppLayout>

@@ -72,6 +72,7 @@ export function useRagQuery() {
   const sendMessage = useCallback(async (payload: ChatInputSubmitPayload | string) => {
     const text = typeof payload === 'string' ? payload : payload.text;
     const images = typeof payload === 'string' ? [] : payload.images;
+    const modelId = typeof payload === 'string' ? undefined : payload.modelId || undefined;
     if (!text.trim()) return;
 
     // Cancel any in-progress stream
@@ -116,7 +117,7 @@ export function useRagQuery() {
 
     try {
       for await (const event of streamQueryRAG(
-        { question: text, conversation_summary: conversationSummary, session_id: currentSessionId },
+        { question: text, conversation_summary: conversationSummary, session_id: currentSessionId, model: modelId },
         controller.signal,
       )) {
         if (event.type === 'node_update' && event.node) {

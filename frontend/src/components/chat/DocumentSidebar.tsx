@@ -36,10 +36,12 @@ export function DocumentSidebar({ sources, messageId, onClose }: DocumentSidebar
               </div>
               {source.excerpt && <p className="text-xs leading-relaxed text-muted-foreground">{source.excerpt}</p>}
               {source.url && (
-                <Button type="button" variant="ghost" size="sm" className="mt-3 h-7 px-2 text-xs">
-                  <ExternalLink className="mr-1.5 h-3.5 w-3.5" />
-                  Ouvrir
-                </Button>
+                <a href={source.url} target="_blank" rel="noopener noreferrer">
+                  <Button type="button" variant="ghost" size="sm" className="mt-3 h-7 px-2 text-xs">
+                    <ExternalLink className="mr-1.5 h-3.5 w-3.5" />
+                    Ouvrir
+                  </Button>
+                </a>
               )}
             </article>
           ))}

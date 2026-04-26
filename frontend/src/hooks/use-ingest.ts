@@ -27,7 +27,7 @@ export function useIngest() {
       if (!jobs.length) return;
       for (const job of jobs) {
         try {
-          const status: JobStatusResponse = await getJobStatus(job.taskId);
+          const status: JobStatusResponse = await getJobStatus(job.taskId, token!);
           if (status.status === 'indexed') {
             updateFile(job.fileId, { status: 'indexed', progress: 100 });
             pendingRef.current = pendingRef.current.filter((j) => j.fileId !== job.fileId);

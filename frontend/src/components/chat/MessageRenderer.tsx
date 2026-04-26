@@ -3,6 +3,9 @@ import ChartRenderer from './ChartRenderer';
 import { TableDisplay } from './TableDisplay';
 import { FileCode, FileJson, Copy, Check } from 'lucide-react';
 import { useState } from 'react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
+import rehypeSanitize from 'rehype-sanitize';
 
 interface MessageRendererProps {
   content: MessageContent;
@@ -64,8 +67,38 @@ const MessageRenderer = ({ content }: MessageRendererProps) => {
   switch (content.type) {
     case 'text':
       return (
-        <div className="prose prose-sm max-w-none">
-          <p className="whitespace-pre-wrap leading-relaxed">{content.text}</p>
+        <div className="prose prose-sm max-w-none dark:prose-invert
+            prose-p:leading-relaxed prose-p:my-1
+            prose-headings:font-semibold prose-headings:mt-4 prose-headings:mb-2
+            prose-h1:text-lg prose-h2:text-base prose-h3:text-sm
+            prose-ul:my-1 prose-ol:my-1 prose-li:my-0.5
+            prose-pre:bg-muted prose-pre:border prose-pre:border-border prose-pre:rounded-lg
+            prose-code:text-primary prose-code:bg-muted prose-code:px-1 prose-code:py-0.5 prose-code:rounded prose-code:text-xs prose-code:before:content-none prose-code:after:content-none
+            prose-blockquote:border-l-primary/40 prose-blockquote:text-muted-foreground
+            prose-a:text-primary prose-a:no-underline hover:prose-a:underline
+            prose-table:text-sm prose-th:py-1 prose-td:py-1
+            prose-strong:font-semibold">
+          <ReactMarkdown
+            remarkPlugins={[remarkGfm]}
+            rehypePlugins={[rehypeSanitize]}
+            components={{
+              pre: ({ children }) => <div className="not-prose">{children}</div>,
+              code: ({ className, children, ...props }) => {
+                const isBlock = className?.startsWith('language-');
+                if (isBlock) {
+                  const lang = className?.replace('language-', '') ?? '';
+                  return <CodeBlock code={String(children).replace(/\n$/, '')} language={lang} />;
+                }
+                return (
+                  <code className="text-primary bg-muted px-1 py-0.5 rounded text-xs font-mono" {...props}>
+                    {children}
+                  </code>
+                );
+              },
+            }}
+          >
+            {content.text ?? ''}
+          </ReactMarkdown>
         </div>
       );
 

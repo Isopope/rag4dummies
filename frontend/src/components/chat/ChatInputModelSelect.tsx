@@ -1,33 +1,26 @@
-import { Bot, BrainCircuit, Gem, Sparkles, Zap } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { Bot, BrainCircuit, Gem, Zap, Cpu } from 'lucide-react';
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
+  SelectLabel,
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { getModels } from '@/lib/api';
+import type { ModelInfo } from '@/lib/api';
 
-export interface ChatModel {
-  id: string;
-  name: string;
-  provider: string;
-}
+const PROVIDER_META: Record<string, { label: string; Icon: React.ElementType }> = {
+  openai:     { label: 'OpenAI',      Icon: Bot },
+  anthropic:  { label: 'Anthropic',   Icon: BrainCircuit },
+  vertex_ai:  { label: 'Google',      Icon: Gem },
+  openrouter: { label: 'OpenRouter',  Icon: Cpu },
+};
 
-export const MOCK_MODELS: ChatModel[] = [
-  { id: 'gpt-4o', name: 'GPT-4o', provider: 'openai' },
-  { id: 'gpt-4o-mini', name: 'GPT-4o mini', provider: 'openai' },
-  { id: 'claude-sonnet-4', name: 'Claude Sonnet 4', provider: 'anthropic' },
-  { id: 'gemini-2.5-pro', name: 'Gemini 2.5 Pro', provider: 'google' },
-];
-
-const PROVIDER_META = {
-  openai: { label: 'OpenAI', icon: Bot },
-  anthropic: { label: 'Anthropic', icon: BrainCircuit },
-  google: { label: 'Google', icon: Gem },
-} as const;
-
-function getProviderMeta(provider: string) {
-  return PROVIDER_META[provider as keyof typeof PROVIDER_META] ?? { label: provider, icon: Zap };
+function providerMeta(provider: string) {
+  return PROVIDER_META[provider] ?? { label: provider, Icon: Zap };
 }
 
 interface ChatInputModelSelectProps {
@@ -36,39 +29,54 @@ interface ChatInputModelSelectProps {
 }
 
 export function ChatInputModelSelect({ value, onChange }: ChatInputModelSelectProps) {
-  const selected = MOCK_MODELS.find((m) => m.id === value) ?? MOCK_MODELS[0];
-  const selectedMeta = getProviderMeta(selected.provider);
-  const SelectedIcon = selectedMeta.icon;
+  const [models, setModels] = useState<ModelInfo[]>([]);
+  const [defaultModel, setDefaultModel] = useState('');
+
+  useEffect(() => {
+    getModels()
+      .then(({ models: list, default: def }) => {
+        setModels(list);
+        if (!value && def) onChange(def);
+        setDefaultModel(def);
+      })
+      .catch(() => {/* silencieux si API indisponible */});
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Groupe par provider
+  const grouped = models.reduce<Record<string, ModelInfo[]>>((acc, m) => {
+    (acc[m.provider] ??= []).push(m);
+    return acc;
+  }, {});
+
+  const currentId = value || defaultModel;
+  const current = models.find((m) => m.id === currentId);
+  const { Icon: CurrentIcon } = providerMeta(current?.provider ?? '');
+
+  if (models.length === 0) return null;
 
   return (
-    <Select value={value} onValueChange={onChange}>
+    <Select value={currentId} onValueChange={onChange}>
       <SelectTrigger className="h-7 w-auto gap-1.5 border-none bg-transparent px-2 text-xs text-muted-foreground hover:text-foreground hover:bg-muted focus:ring-0 focus:ring-offset-0 [&>svg]:size-3">
-        <SelectedIcon className="size-3 shrink-0" />
-        <SelectValue>{selected.name}</SelectValue>
+        <CurrentIcon className="size-3 shrink-0" />
+        <SelectValue>{current?.label ?? currentId}</SelectValue>
       </SelectTrigger>
-      <SelectContent align="end">
-        {MOCK_MODELS.map((m) => {
-          const meta = getProviderMeta(m.provider);
-          const ProviderIcon = meta.icon;
-
+      <SelectContent align="end" className="max-h-72">
+        {Object.entries(grouped).map(([provider, items]) => {
+          const { label: provLabel, Icon: ProvIcon } = providerMeta(provider);
           return (
-            <SelectItem key={m.id} value={m.id} className="text-xs">
-              <div className="flex items-center gap-2">
-                <ProviderIcon className="size-3.5 shrink-0 text-muted-foreground" />
-                <div className="flex flex-col">
-                  <span>{m.name}</span>
-                  <span className="text-[10px] text-muted-foreground">{meta.label}</span>
-                </div>
-              </div>
-            </SelectItem>
+            <SelectGroup key={provider}>
+              <SelectLabel className="flex items-center gap-1.5 text-[10px] uppercase tracking-wide text-muted-foreground">
+                <ProvIcon className="size-3" />
+                {provLabel}
+              </SelectLabel>
+              {items.map((m) => (
+                <SelectItem key={m.id} value={m.id} className="text-xs pl-6">
+                  {m.label}
+                </SelectItem>
+              ))}
+            </SelectGroup>
           );
         })}
-        <div className="px-2 py-1.5 text-[10px] text-muted-foreground border-t border-border">
-          <div className="flex items-center gap-1.5">
-            <Sparkles className="size-3" />
-            Providers mockés pour la prévisualisation
-          </div>
-        </div>
       </SelectContent>
     </Select>
   );
