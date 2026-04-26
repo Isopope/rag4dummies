@@ -57,8 +57,12 @@ const AppLayout = ({ sidebar, children, activeView, onViewChange }: AppLayoutPro
       {/* ── Nav rail ────────────────────────────────────────────── */}
       <div className="shrink-0 w-14 bg-sidebar flex flex-col items-center py-3 gap-1 border-r border-sidebar-border">
         {/* Logo */}
-        <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-primary to-primary/70 flex items-center justify-center mb-3 shadow-sm">
-          <span className="text-primary-foreground font-bold text-sm">R</span>
+        <div className="flex flex-col items-center mb-3 gap-0 select-none">
+          <div className="flex items-baseline" style={{ gap: 0 }}>
+            <span style={{ fontSize: 18, fontWeight: 900, color: '#fff', lineHeight: 1 }}>G</span>
+            <span style={{ fontSize: 7, fontWeight: 900, color: '#fff', lineHeight: 1, position: 'relative', top: '-2px' }}>4</span>
+            <span style={{ fontSize: 18, fontWeight: 900, color: '#e03120', lineHeight: 1 }}>AI</span>
+          </div>
         </div>
 
         <NavButton active={activeView === 'chat'} onClick={() => onViewChange('chat')} title="Chat">
@@ -98,7 +102,7 @@ const AppLayout = ({ sidebar, children, activeView, onViewChange }: AppLayoutPro
           <div className="flex flex-col items-center gap-1 mt-1">
             {/* Avatar avec initiale */}
             <div
-              className="w-8 h-8 rounded-full bg-primary/20 flex items-center justify-center text-primary text-xs font-semibold cursor-default select-none"
+              className="w-8 h-8 rounded-full bg-accent/20 flex items-center justify-center text-accent text-xs font-semibold cursor-default select-none"
               title={user?.email}
             >
               {user?.email?.[0]?.toUpperCase() ?? <UserCircle2 className="w-4 h-4" />}

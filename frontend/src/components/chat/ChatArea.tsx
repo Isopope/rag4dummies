@@ -1,5 +1,5 @@
 import { useRef, useEffect, useMemo, useState, useCallback } from 'react';
-import { Bot, Sparkles, ArrowDown } from 'lucide-react';
+import { ArrowDown } from 'lucide-react';
 import { ChatMessage, MessageFeedback } from '@/types/chat';
 import MessageRenderer from './MessageRenderer';
 import FollowUpSuggestions from './FollowUpSuggestions';
@@ -29,28 +29,31 @@ const getGreeting = () => GREETINGS[Math.floor(Math.random() * GREETINGS.length)
 /* ── Welcome screen (0 messages) ───────────────────────────────────── */
 const WelcomeScreen = ({ greeting, onSelect }: { greeting: string; onSelect?: (s: string) => void }) => (
   <div className="flex-1 flex items-center justify-center animate-fade-in">
-    <div className="flex flex-col items-center gap-5 max-w-md text-center px-4">
-      {/* Logo */}
-      <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-primary/20 to-primary/5 flex items-center justify-center shadow-sm">
-        <Sparkles className="w-8 h-8 text-primary" />
+    <div className="flex flex-col items-center gap-6 max-w-lg text-center px-4">
+      {/* G4AI bicolor logotype */}
+      <div className="flex items-baseline select-none" style={{ gap: 0 }}>
+        <span style={{ fontSize: 64, fontWeight: 900, color: '#1e3a8a', lineHeight: 1, fontFamily: 'Inter, sans-serif' }}>G</span>
+        <span style={{ fontSize: 24, fontWeight: 900, color: '#1e3a8a', lineHeight: 1, position: 'relative', top: '-6px', fontFamily: 'Inter, sans-serif' }}>4</span>
+        <span style={{ fontSize: 64, fontWeight: 900, color: '#e03120', lineHeight: 1, fontFamily: 'Inter, sans-serif' }}>AI</span>
       </div>
 
-      <h2 className="text-xl font-semibold text-foreground">{greeting}</h2>
-
-      <p className="text-sm text-muted-foreground leading-relaxed">
-        Je peux répondre à vos questions à partir de vos documents indexés,
-        générer des tableaux, graphiques et données structurées.
-      </p>
+      <div className="space-y-2">
+        <h2 className="text-2xl font-bold text-foreground">{greeting}</h2>
+        <p className="text-sm text-muted-foreground leading-relaxed">
+          Je réponds à vos questions à partir de vos documents indexés —
+          tableaux, graphiques et données structurées inclus.
+        </p>
+      </div>
 
       {/* Starter suggestions */}
       {onSelect && (
-        <div className="flex flex-wrap justify-center gap-2 mt-2">
+        <div className="flex flex-wrap justify-center gap-2 mt-1">
           {['Résume le document principal', 'Quels sont les points clés ?', 'Compare les sources disponibles'].map(
             (s) => (
               <button
                 key={s}
                 onClick={() => onSelect(s)}
-                className="px-3 py-1.5 text-xs rounded-full border border-border bg-card hover:bg-secondary/60 text-foreground transition-colors"
+                className="px-4 py-2 text-xs rounded-full border border-border bg-card hover:bg-secondary/60 text-foreground transition-colors font-medium shadow-sm"
               >
                 {s}
               </button>

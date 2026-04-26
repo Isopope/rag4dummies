@@ -230,7 +230,8 @@ const ChatSidebar = ({
       <div className="p-3 border-b border-sidebar-border">
         <button
           onClick={onNewSession}
-          className="w-full flex items-center gap-2 px-3 py-2.5 rounded-xl bg-sidebar-accent text-sidebar-accent-foreground hover:bg-sidebar-muted transition-colors text-sm font-medium"
+          className="w-full flex items-center gap-2 px-3 py-2.5 rounded-xl text-white hover:opacity-90 transition-opacity text-sm font-semibold shadow-sm"
+          style={{ background: 'linear-gradient(90deg, #1e3a8a 0%, #2451b3 100%)' }}
         >
           <Pencil className="w-4 h-4" />
           Nouvelle conversation
