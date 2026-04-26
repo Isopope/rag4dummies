@@ -58,37 +58,57 @@ def close_store() -> None:
 # ── RAGAgent (singleton processus) ────────────────────────────────────────────
 
 _agent: "RAGAgent | None" = None
+_agents_by_model: "dict[str, RAGAgent]" = {}
+
+
+def _build_agent(llm_model: str) -> "RAGAgent":
+    """Instancie un RAGAgent pour le modèle donné."""
+    cfg = get_config()
+    store = get_store()
+    from rag_agent import RAGAgent
+    agent = RAGAgent(
+        weaviate_store     = store,
+        openai_key         = cfg.openai_key,
+        cohere_key         = cfg.cohere_key,
+        embedding_model    = cfg.embedding_model,
+        llm_model          = llm_model,
+        top_k_retrieve     = cfg.top_k_retrieve,
+        top_k_final        = cfg.top_k_final,
+        hybrid_alpha       = cfg.hybrid_alpha,
+        max_tokens         = cfg.max_tokens,
+        max_agent_iter     = cfg.max_agent_iter,
+        llm_timeout        = cfg.llm_timeout,
+        enable_compression = cfg.enable_compression,
+    )
+    logger.info("RAGAgent initialisé (modèle={}, embedding={})", llm_model, cfg.embedding_model)
+    return agent
 
 
 def get_agent() -> "RAGAgent":
-    """Retourne l'instance RAGAgent (crée l'agent si absent)."""
+    """Retourne l'agent par défaut (modèle configuré dans .env)."""
     global _agent
     if _agent is None:
-        cfg = get_config()
-        store = get_store()
-        from rag_agent import RAGAgent
-        _agent = RAGAgent(
-            weaviate_store  = store,
-            openai_key      = cfg.openai_key,
-            cohere_key      = cfg.cohere_key,
-            embedding_model = cfg.embedding_model,
-            llm_model       = cfg.llm_model,
-            top_k_retrieve  = cfg.top_k_retrieve,
-            top_k_final     = cfg.top_k_final,
-            hybrid_alpha    = cfg.hybrid_alpha,
-            max_tokens      = cfg.max_tokens,
-            max_agent_iter  = cfg.max_agent_iter,
-            llm_timeout     = cfg.llm_timeout,
-            enable_compression = cfg.enable_compression,
-        )
-        logger.info("RAGAgent initialisé (modèle={}, embedding={})", cfg.llm_model, cfg.embedding_model)
+        _agent = _build_agent(get_config().llm_model)
     return _agent
 
 
+def get_agent_for_model(model: "str | None" = None) -> "RAGAgent":
+    """Retourne un agent pour le modèle demandé (mis en cache par modèle).
+
+    Si model est None ou vide, retourne l'agent par défaut.
+    """
+    if not model:
+        return get_agent()
+    if model not in _agents_by_model:
+        _agents_by_model[model] = _build_agent(model)
+    return _agents_by_model[model]
+
+
 def reset_agent() -> None:
-    """Force la recréation de l'agent (ex : après changement de clé API)."""
+    """Force la recréation de tous les agents (ex : après changement de clé API)."""
     global _agent
     _agent = None
+    _agents_by_model.clear()
 
 
 # ── Base de données (re-export pour les routers) ───────────────────────────────

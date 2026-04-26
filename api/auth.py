@@ -3,7 +3,8 @@
 Exporte :
     - auth_backend          : backend JWT à passer aux routers
     - fastapi_users         : instance centrale FastAPIUsers
-    - current_active_user   : dépendance FastAPI pour protéger un endpoint
+    - current_active_user   : dépendance FastAPI — tout utilisateur actif
+    - current_admin_user    : dépendance FastAPI — réservé au rôle "admin"
     - UserRead / UserCreate / UserUpdate : schémas Pydantic
 """
 from __future__ import annotations
@@ -12,7 +13,7 @@ import os
 import uuid
 from typing import Optional
 
-from fastapi import Depends
+from fastapi import Depends, HTTPException, status as http_status
 from fastapi_users import BaseUserManager, FastAPIUsers, UUIDIDMixin, schemas
 from fastapi_users.authentication import AuthenticationBackend, BearerTransport, JWTStrategy
 from fastapi_users.db import SQLAlchemyUserDatabase
@@ -76,6 +77,17 @@ auth_backend = AuthenticationBackend(
 
 fastapi_users = FastAPIUsers[User, uuid.UUID](get_user_manager, [auth_backend])
 
-# Dépendance prête à l'emploi pour protéger n'importe quel endpoint :
+# Dépendance — tout utilisateur actif
 #   async def my_route(user: User = Depends(current_active_user)): ...
 current_active_user = fastapi_users.current_user(active=True)
+
+
+# Dépendance — administrateur uniquement (role == "admin")
+#   async def my_route(_: User = Depends(current_admin_user)): ...
+async def current_admin_user(user: User = Depends(current_active_user)) -> User:
+    if user.role != "admin":
+        raise HTTPException(
+            status_code=http_status.HTTP_403_FORBIDDEN,
+            detail="Accès réservé aux administrateurs.",
+        )
+    return user

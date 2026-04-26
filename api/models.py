@@ -13,6 +13,7 @@ class QueryRequest(BaseModel):
     source_filter: Optional[str] = Field(None, description="Restreindre la recherche à ce chemin source")
     conversation_summary: str = Field("", description="Résumé des tours précédents")
     session_id: Optional[str] = Field(None, description="UUID de la session en cours (None = nouvelle session)")
+    model: Optional[str] = Field(None, description="Identifiant LiteLLM du modèle (ex: gpt-4o, mistral/mistral-large-latest). Si absent, utilise le modèle par défaut du serveur.")
 
 
 # ── Modèles de données ─────────────────────────────────────────────────────────

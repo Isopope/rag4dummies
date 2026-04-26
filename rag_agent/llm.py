@@ -24,11 +24,21 @@ def make_llm_caller(client, model: str, timeout: float) -> Callable:
     """Retourne une fonction d'appel LLM via LiteLLM avec timeout."""
     def _call(messages: list, **kwargs) -> Any:
         from llm.factory import get_llm_completion
-        
-        # LITELLM automatically manages providers
-        api_key = getattr(client, "api_key", None) if client else None
-        _base   = getattr(client, "base_url", None) if client else None
-        api_base = str(_base) if _base is not None else None
+
+        # N'injecter api_key/api_base que pour les modèles OpenAI.
+        # Pour les autres providers (Anthropic, Mistral, Ollama…), LiteLLM
+        # doit lire la variable d'environnement correspondante et utiliser
+        # son propre endpoint. Passer la clé ou l'URL OpenAI à la place
+        # ferait échouer l'appel (NotFoundError / auth error).
+        _is_openai = not any(
+            model.startswith(prefix)
+            for prefix in ("claude", "anthropic/", "mistral/", "ollama/", "gemini/", "vertex/", "openrouter/", "z-ai/", "deepseek/", "qwen/", "moonshotai/")
+        )
+        api_key  = (getattr(client, "api_key",  None) if client else None) if _is_openai else None
+        api_base = None
+        if _is_openai:
+            _base = getattr(client, "base_url", None) if client else None
+            api_base = str(_base) if _base is not None else None
         
         # `timeout` peut être passé par l'appelant pour surcharger la valeur par défaut
         effective_timeout = kwargs.pop("timeout", timeout)

@@ -19,7 +19,9 @@ from ..models import (
     SessionMessageItem,
     ChunkModel,
 )
+from ..auth import current_active_user
 from db import get_db_session
+from db.models.user import User
 from db.repositories import ConversationRepository
 
 router = APIRouter()
@@ -98,16 +100,16 @@ def _conv_to_detail(conv) -> SessionDetail:
     "",
     response_model=list[SessionItem],
     summary="Lister les sessions",
-    description="Retourne les sessions de chat d'un utilisateur, triées antichronologiquement.",
+    description="Retourne les sessions de chat de l'utilisateur connecté, triées antichronologiquement.",
 )
 async def list_sessions(
-    user_id: str = Query("anonymous", description="Identifiant de l'utilisateur"),
     limit:   int = Query(50, ge=1, le=200),
     offset:  int = Query(0, ge=0),
     session: AsyncSession = Depends(get_db_session),
+    user:    User = Depends(current_active_user),
 ) -> list[SessionItem]:
     repo  = ConversationRepository(session)
-    convs = await repo.list_by_user(user_id=user_id, limit=limit, offset=offset)
+    convs = await repo.list_by_user(user_id=str(user.id), limit=limit, offset=offset)
     return [_conv_to_item(c) for c in convs]
 
 
@@ -122,6 +124,7 @@ async def list_sessions(
 async def get_session(
     session_id: str,
     session: AsyncSession = Depends(get_db_session),
+    user:    User = Depends(current_active_user),
 ) -> SessionDetail:
     try:
         sid = uuid.UUID(session_id)
@@ -132,6 +135,8 @@ async def get_session(
     conv = await repo.get(sid)
     if conv is None:
         raise HTTPException(status_code=404, detail="Session introuvable")
+    if conv.user_id != str(user.id):
+        raise HTTPException(status_code=403, detail="Accès refusé")
 
     return _conv_to_detail(conv)
 
@@ -146,13 +151,20 @@ async def get_session(
 async def delete_session(
     session_id: str,
     session: AsyncSession = Depends(get_db_session),
+    user:    User = Depends(current_active_user),
 ) -> None:
     try:
         sid = uuid.UUID(session_id)
     except ValueError:
         raise HTTPException(status_code=400, detail="session_id invalide")
 
-    repo    = ConversationRepository(session)
+    repo = ConversationRepository(session)
+    conv = await repo.get(sid)
+    if conv is None:
+        raise HTTPException(status_code=404, detail="Session introuvable")
+    if conv.user_id != str(user.id):
+        raise HTTPException(status_code=403, detail="Accès refusé")
+
     deleted = await repo.delete(sid)
     if not deleted:
         raise HTTPException(status_code=404, detail="Session introuvable")
@@ -169,6 +181,7 @@ async def rename_session(
     session_id: str,
     body: RenameSessionRequest,
     session: AsyncSession = Depends(get_db_session),
+    user:    User = Depends(current_active_user),
 ) -> SessionItem:
     try:
         sid = uuid.UUID(session_id)
@@ -176,7 +189,13 @@ async def rename_session(
         raise HTTPException(status_code=400, detail="session_id invalide")
 
     repo = ConversationRepository(session)
-    ok   = await repo.update_title(session_id, body.title)
+    conv = await repo.get(sid)
+    if conv is None:
+        raise HTTPException(status_code=404, detail="Session introuvable")
+    if conv.user_id != str(user.id):
+        raise HTTPException(status_code=403, detail="Accès refusé")
+
+    ok = await repo.update_title(session_id, body.title)
     if not ok:
         raise HTTPException(status_code=404, detail="Session introuvable")
 

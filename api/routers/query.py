@@ -11,9 +11,11 @@ from fastapi.responses import StreamingResponse
 from loguru import logger
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ..deps import get_agent, get_document_store
+from ..auth import current_active_user
+from ..deps import get_agent_for_model, get_document_store
 from ..models import BboxModel, ChunkModel, QueryRequest, QueryResponse, StreamEvent
 from db import get_db_session
+from db.models.user import User
 from db.repositories import ConversationRepository
 
 router = APIRouter()
@@ -87,9 +89,9 @@ def _add_pdf_urls(chunks: list[ChunkModel], doc_store, expires_seconds: int = 36
 )
 async def query(
     body: QueryRequest,
-    agent=Depends(get_agent),
     doc_store=Depends(get_document_store),
 ) -> QueryResponse:
+    agent = get_agent_for_model(body.model)
     loop = asyncio.get_event_loop()
     try:
         result = await loop.run_in_executor(
@@ -135,10 +137,11 @@ async def query(
 )
 async def query_stream(
     body: QueryRequest,
-    agent=Depends(get_agent),
     doc_store=Depends(get_document_store),
     db_session: AsyncSession = Depends(get_db_session),
+    user: User = Depends(current_active_user),
 ):
+    agent = get_agent_for_model(body.model)
     loop = asyncio.get_event_loop()
     queue: asyncio.Queue = asyncio.Queue()
 
@@ -181,6 +184,12 @@ async def query_stream(
                 try:
                     repo = ConversationRepository(db_session)
                     if saved_session_id:
+                        # Vérifier que la session appartient bien à l'utilisateur
+                        import uuid as _uuid
+                        existing = await repo.get(_uuid.UUID(saved_session_id))
+                        if existing is None or existing.user_id != str(user.id):
+                            saved_session_id = None  # session invalide → créer une nouvelle
+                    if saved_session_id:
                         await repo.append_turn(
                             session_id            = saved_session_id,
                             question              = body.question,
@@ -192,7 +201,7 @@ async def query_stream(
                             title                 = title,
                         )
                     else:
-                        conv = await repo.create_session(title=title)
+                        conv = await repo.create_session(user_id=str(user.id), title=title)
                         saved_session_id = str(conv.id)
                         await repo.append_turn(
                             session_id            = saved_session_id,
