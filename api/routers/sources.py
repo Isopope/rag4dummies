@@ -7,8 +7,10 @@ from pathlib import Path
 from fastapi import APIRouter, Depends, HTTPException, status
 from loguru import logger
 
+from ..auth import current_admin_user
 from ..deps import get_store, reset_agent
 from ..models import SourceItem, SourcesResponse
+from db.models.user import User
 
 router = APIRouter()
 
@@ -20,7 +22,7 @@ router = APIRouter()
     response_model=SourcesResponse,
     summary="Lister les sources indexées",
 )
-async def list_sources(store=Depends(get_store)) -> SourcesResponse:
+async def list_sources(store=Depends(get_store), _: User = Depends(current_admin_user)) -> SourcesResponse:
     """Retourne la liste des documents indexés et le nombre de chunks par document."""
     try:
         raw = store.list_sources()
@@ -51,7 +53,7 @@ async def list_sources(store=Depends(get_store)) -> SourcesResponse:
     summary="Vider toute la base (reset)",
     description="⚠️ Supprime **tous** les chunks Weaviate. Irréversible.",
 )
-async def reset_sources(store=Depends(get_store)) -> None:
+async def reset_sources(store=Depends(get_store), _: User = Depends(current_admin_user)) -> None:
     try:
         store.reset_collection()
         reset_agent()  # force la recréation de l'agent qui tient un ref au store
@@ -68,7 +70,7 @@ async def reset_sources(store=Depends(get_store)) -> None:
     summary="Supprimer un document",
     description="Supprime tous les chunks d'un document. L'identifiant est le chemin source encodé en URL.",
 )
-async def delete_source(encoded_source: str, store=Depends(get_store)) -> None:
+async def delete_source(encoded_source: str, store=Depends(get_store), _: User = Depends(current_admin_user)) -> None:
     source = urllib.parse.unquote(encoded_source)
     if not source:
         raise HTTPException(status_code=400, detail="Identifiant source vide.")

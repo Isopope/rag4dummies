@@ -13,7 +13,9 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import FileResponse, RedirectResponse
 from loguru import logger
 
+from ..auth import current_admin_user
 from ..deps import get_document_store
+from db.models.user import User
 from storage import LocalDocumentStore
 
 router = APIRouter()
@@ -31,6 +33,7 @@ router = APIRouter()
 async def get_document(
     object_key: str,
     doc_store=Depends(get_document_store),
+    _: User = Depends(current_admin_user),
 ):
     if not object_key or ".." in object_key or object_key.startswith("/"):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Clé invalide.")

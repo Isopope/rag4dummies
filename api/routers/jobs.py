@@ -5,8 +5,10 @@ import os
 
 from fastapi import APIRouter, Depends, HTTPException, status
 
+from ..auth import current_admin_user
 from ..deps import get_db_session, get_document_store
 from ..models import JobStatusResponse
+from db.models.user import User
 
 router = APIRouter()
 
@@ -25,6 +27,7 @@ async def get_job_status(
     task_id: str,
     db=Depends(get_db_session),
     doc_store=Depends(get_document_store),
+    _: User = Depends(current_admin_user),
 ) -> JobStatusResponse:
     # ── 1. État Celery (temps réel) ────────────────────────────────────────────
     from worker.app import celery_app

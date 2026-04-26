@@ -18,9 +18,11 @@ Chaque document découvert génère ensuite son propre task_id d'ingestion
 """
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status
 
+from ..auth import current_admin_user
 from ..deps import get_celery_app
+from db.models.user import User
 from ..models import (
     CrawlJobResponse,
     CrawlLocalRequest,
@@ -45,7 +47,7 @@ router = APIRouter()
         "Les fichiers déjà indexés sont ignorés automatiquement."
     ),
 )
-async def crawl_local(body: CrawlLocalRequest) -> CrawlJobResponse:
+async def crawl_local(body: CrawlLocalRequest, _: User = Depends(current_admin_user)) -> CrawlJobResponse:
     if body.parser not in ("docling", "mineru", "simple"):
         raise HTTPException(status_code=400, detail="parser doit être : docling | mineru | simple")
     if body.strategy not in ("by_token", "by_sentence", "by_block"):
@@ -86,7 +88,7 @@ async def crawl_local(body: CrawlLocalRequest) -> CrawlJobResponse:
         "(``playwright install chromium``)."
     ),
 )
-async def crawl_web(body: CrawlWebRequest) -> CrawlJobResponse:
+async def crawl_web(body: CrawlWebRequest, _: User = Depends(current_admin_user)) -> CrawlJobResponse:
     if not body.urls:
         raise HTTPException(status_code=400, detail="La liste d'URLs ne peut pas être vide.")
     if body.mode not in ("pdf", "html"):
@@ -135,7 +137,7 @@ async def crawl_web(body: CrawlWebRequest) -> CrawlJobResponse:
         "d'environnement ``SHAREPOINT_CLIENT_ID``, ``SHAREPOINT_CLIENT_SECRET``, ``SHAREPOINT_TENANT_ID``."
     ),
 )
-async def crawl_sharepoint(body: CrawlSharepointRequest) -> CrawlJobResponse:
+async def crawl_sharepoint(body: CrawlSharepointRequest, _: User = Depends(current_admin_user)) -> CrawlJobResponse:
     if not body.site_url and not body.site_name:
         raise HTTPException(
             status_code=400,

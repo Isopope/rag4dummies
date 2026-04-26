@@ -5,7 +5,7 @@ import os
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
-from ..auth import current_active_user
+from ..auth import current_admin_user
 from db.models.user import User
 
 from loguru import logger
@@ -56,7 +56,7 @@ async def ingest_pdf(
     strategy: str        = Form("by_sentence", description="Stratégie de découpage : by_token | by_sentence | by_block"),
     doc_store: DocumentStore = Depends(get_document_store),
     db=Depends(get_db_session),
-    _: User = Depends(current_active_user),  # à décommenter pour autoriser l'ingestion avec authentification
+    _: User = Depends(current_admin_user),  # admin uniquement
 ) -> IngestJobResponse:
     if parser not in ("docling", "mineru", "simple"):
         raise HTTPException(status_code=400, detail="parser doit être : docling | mineru | simple")
@@ -117,6 +117,7 @@ async def ingest_jsonl(
     source_override: str        = Form("", description="Remplace le champ source présent dans le JSONL"),
     doc_store: DocumentStore = Depends(get_document_store),
     db=Depends(get_db_session),
+    _: User = Depends(current_admin_user),  # admin uniquement
 ) -> IngestJobResponse:
     filename = file.filename or "upload.jsonl"
     _check_extension(filename, {".jsonl"})
