@@ -12,6 +12,7 @@ class QueryRequest(BaseModel):
     question: str = Field(..., min_length=1, max_length=4000, description="Question de l'utilisateur")
     source_filter: Optional[str] = Field(None, description="Restreindre la recherche à ce chemin source")
     conversation_summary: str = Field("", description="Résumé des tours précédents")
+    session_id: Optional[str] = Field(None, description="UUID de la session en cours (None = nouvelle session)")
 
 
 # ── Modèles de données ─────────────────────────────────────────────────────────
@@ -71,6 +72,8 @@ class StreamEvent(BaseModel):
     sources: list[ChunkModel] = []
     follow_up_suggestions: list[str] = []
     conversation_title: Optional[str] = None
+    question_id: Optional[str] = None
+    session_id: Optional[str] = None
     error: Optional[str] = None
 
 
@@ -177,7 +180,7 @@ class FeedbackRequest(BaseModel):
 
     Envoyé depuis l'UI quand l'utilisateur note et commente une réponse LLM.
     """
-    question_id: str = Field(..., description="Identifiant unique de la question (UnifiedRAGState.question_id)")
+    question_id: Optional[str] = Field(None, description="Identifiant unique de la question (UnifiedRAGState.question_id)")
     question: str = Field(..., min_length=1, max_length=4000, description="Question posée")
     answer: str = Field(..., min_length=1, description="Réponse du LLM")
     rating: int = Field(..., ge=1, le=5, description="Note de 1 (mauvais) à 5 (excellent)")
@@ -206,3 +209,38 @@ class ConversationItem(BaseModel):
     question_id: Optional[str] = None
     created_at: str
     message_count: int
+
+
+# ── Sessions de chat ──────────────────────────────────────────────────────────
+
+class SessionMessageItem(BaseModel):
+    """Un message dans une session de chat."""
+    id: str
+    role: str  # "user" | "assistant"
+    content: str
+    sources: list[ChunkModel] = []
+    follow_up_suggestions: list[str] = []
+    created_at: str
+
+
+class SessionItem(BaseModel):
+    """Vue synthétique d'une session pour la liste."""
+    id: str
+    title: Optional[str] = None
+    created_at: str
+    updated_at: str
+    message_count: int = 0
+    last_message: Optional[str] = None
+
+
+class SessionDetail(BaseModel):
+    """Session complète avec tous ses messages."""
+    id: str
+    title: Optional[str] = None
+    created_at: str
+    updated_at: str
+    messages: list[SessionMessageItem] = []
+
+
+class RenameSessionRequest(BaseModel):
+    title: str = Field(..., min_length=1, max_length=200)

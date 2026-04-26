@@ -9,9 +9,12 @@ from typing import AsyncGenerator
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import StreamingResponse
 from loguru import logger
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..deps import get_agent, get_document_store
 from ..models import BboxModel, ChunkModel, QueryRequest, QueryResponse, StreamEvent
+from db import get_db_session
+from db.repositories import ConversationRepository
 
 router = APIRouter()
 
@@ -134,6 +137,7 @@ async def query_stream(
     body: QueryRequest,
     agent=Depends(get_agent),
     doc_store=Depends(get_document_store),
+    db_session: AsyncSession = Depends(get_db_session),
 ):
     loop = asyncio.get_event_loop()
     queue: asyncio.Queue = asyncio.Queue()
@@ -155,10 +159,11 @@ async def query_stream(
     loop.run_in_executor(_THREAD_POOL, _producer)
 
     async def _event_generator() -> AsyncGenerator[str, None]:
-        answer     = ""
-        sources:   list[ChunkModel] = []
-        follow_ups: list[str]       = []
-        title:     str | None       = None
+        answer      = ""
+        sources:    list[ChunkModel] = []
+        follow_ups: list[str]        = []
+        title:      str | None       = None
+        question_id: str | None      = None
 
         while True:
             event = await queue.get()
@@ -171,12 +176,45 @@ async def query_stream(
 
             # Sentinelle de fin
             if event is None:
+                # ── Auto-save session ──────────────────────────────────────────
+                saved_session_id: str | None = body.session_id
+                try:
+                    repo = ConversationRepository(db_session)
+                    if saved_session_id:
+                        await repo.append_turn(
+                            session_id            = saved_session_id,
+                            question              = body.question,
+                            answer                = answer,
+                            sources               = [c.model_dump() for c in sources],
+                            follow_up_suggestions = follow_ups,
+                            n_retrieved           = len(sources),
+                            question_id           = question_id,
+                            title                 = title,
+                        )
+                    else:
+                        conv = await repo.create_session(title=title)
+                        saved_session_id = str(conv.id)
+                        await repo.append_turn(
+                            session_id            = saved_session_id,
+                            question              = body.question,
+                            answer                = answer,
+                            sources               = [c.model_dump() for c in sources],
+                            follow_up_suggestions = follow_ups,
+                            n_retrieved           = len(sources),
+                            question_id           = question_id,
+                        )
+                    await db_session.commit()
+                except Exception as exc:
+                    logger.warning("Auto-save session échoué : {}", exc)
+                # ───────────────────────────────────────────────────────────────
                 done_evt = StreamEvent(
                     type                  = "done",
                     answer                = answer,
                     sources               = sources,
                     follow_up_suggestions = follow_ups,
                     conversation_title    = title,
+                    question_id           = question_id,
+                    session_id            = saved_session_id,
                 )
                 yield f"data: {done_evt.model_dump_json()}\n\n"
                 break
@@ -211,6 +249,9 @@ async def query_stream(
                 if "conversation_title" in state_update:
                     title                = state_update["conversation_title"]
                     evt.conversation_title = title
+
+                if "question_id" in state_update and state_update["question_id"]:
+                    question_id = state_update["question_id"]
 
                 yield f"data: {evt.model_dump_json()}\n\n"
 
