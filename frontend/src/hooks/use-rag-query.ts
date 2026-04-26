@@ -1,6 +1,6 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { streamQueryRAG, submitFeedback } from '@/lib/api';
-import type { ChunkModel, FeedbackPayload } from '@/lib/api';
+import type { ChunkModel, FeedbackPayload, SessionDetail } from '@/lib/api';
 import type { ChatMessage, MessageFeedback, MessageSource, AgentStep } from '@/types/chat';
 import type { ChatInputSubmitPayload } from '@/components/chat/ChatInput';
 import { toast } from 'sonner';
@@ -56,13 +56,18 @@ export function useRagQuery() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [isStreaming, setIsStreaming] = useState(false);
   const [conversationTitle, setConversationTitle] = useState<string | undefined>();
+  const [sessionId, setSessionId] = useState<string | undefined>();
   const lastResult = useRef<LastResult | null>(null);
   const abortRef = useRef<AbortController | null>(null);
-  // Always-current ref so callbacks don't need messages in dep array
+  // Always-current refs so callbacks don't need state in dep array
   const messagesRef = useRef<ChatMessage[]>([]);
   useEffect(() => {
     messagesRef.current = messages;
   }, [messages]);
+  const sessionIdRef = useRef<string | undefined>();
+  useEffect(() => {
+    sessionIdRef.current = sessionId;
+  }, [sessionId]);
 
   const sendMessage = useCallback(async (payload: ChatInputSubmitPayload | string) => {
     const text = typeof payload === 'string' ? payload : payload.text;
@@ -75,6 +80,9 @@ export function useRagQuery() {
     abortRef.current = controller;
 
     const conversationSummary = buildSummary(messagesRef.current);
+
+    // Passe le sessionId courant pour que le backend sauvegarde dans la bonne session
+    const currentSessionId = sessionIdRef.current;
 
     const userMsg: ChatMessage = {
       id: `u-${Date.now()}`,
@@ -103,11 +111,12 @@ export function useRagQuery() {
     let finalSources: ChunkModel[] = [];
     let finalFollowUps: string[] = [];
     let finalTitle: string | undefined;
+    let finalQuestionId: string | undefined;
     const steps: AgentStep[] = [];
 
     try {
       for await (const event of streamQueryRAG(
-        { question: text, conversation_summary: conversationSummary },
+        { question: text, conversation_summary: conversationSummary, session_id: currentSessionId },
         controller.signal,
       )) {
         if (event.type === 'node_update' && event.node) {
@@ -142,9 +151,12 @@ export function useRagQuery() {
           );
         } else if (event.type === 'done') {
           if (event.answer != null) accText = event.answer;
-          finalSources = event.sources ?? [];
-          finalFollowUps = event.follow_up_suggestions ?? [];
-          finalTitle = event.conversation_title;
+          finalSources    = event.sources ?? [];
+          finalFollowUps  = event.follow_up_suggestions ?? [];
+          finalTitle      = event.conversation_title;
+          finalQuestionId = event.question_id;
+          // Stocke le session_id retourné par le backend (nouveau ou existant)
+          if (event.session_id) setSessionId(event.session_id);
         } else if (event.type === 'error') {
           throw new Error(event.error ?? 'Erreur SSE');
         }
@@ -156,7 +168,7 @@ export function useRagQuery() {
       if (finalTitle) setConversationTitle(finalTitle);
 
       lastResult.current = {
-        questionId: event.question_id ?? '',
+        questionId: finalQuestionId ?? '',
         question: text,
         answer: accText,
         sources: finalSources,
@@ -229,8 +241,47 @@ export function useRagQuery() {
     setMessages([]);
     setIsStreaming(false);
     setConversationTitle(undefined);
+    setSessionId(undefined);
     lastResult.current = null;
     messagesRef.current = [];
   }, []);
 
-  return { messages, isSt
+  /** Restaure une session depuis l'historique (appel à GET /sessions/{id}). */
+  const loadSession = useCallback((detail: SessionDetail) => {
+    abortRef.current?.abort();
+    setSessionId(detail.id);
+    setConversationTitle(detail.title ?? undefined);
+    lastResult.current = null;
+
+    const restored: ChatMessage[] = [];
+    for (const m of detail.messages) {
+      if (m.role === 'user') {
+        restored.push({
+          id: m.id,
+          role: 'user',
+          contents: [{ type: 'text', text: m.content }],
+          timestamp: new Date(m.created_at),
+        });
+      } else {
+        const sources: MessageSource[] = m.sources.map((c) => ({
+          id: `${c.source}-${c.chunk_index}`,
+          title: c.source.split('/').pop() ?? c.source,
+          excerpt: c.page_content.slice(0, 200),
+          url: c.pdf_url,
+        }));
+        restored.push({
+          id: m.id,
+          role: 'assistant',
+          contents: [{ type: 'text', text: m.content }],
+          timestamp: new Date(m.created_at),
+          sources: sources.length ? sources : undefined,
+          followUpSuggestions: m.follow_up_suggestions.length ? m.follow_up_suggestions : undefined,
+        });
+      }
+    }
+    setMessages(restored);
+    messagesRef.current = restored;
+  }, []);
+
+  return { messages, isStreaming, conversationTitle, sessionId, sendMessage, sendFeedback, clearMessages, loadSession };
+}

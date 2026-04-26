@@ -47,6 +47,7 @@ export interface QueryRequest {
   question: string;
   source_filter?: string;
   conversation_summary?: string;
+  session_id?: string;
 }
 
 export interface QueryResponse {
@@ -70,6 +71,7 @@ export interface StreamEvent {
   follow_up_suggestions?: string[];
   conversation_title?: string;
   question_id?: string;
+  session_id?: string;
   error?: string;
 }
 
@@ -237,4 +239,64 @@ export async function submitFeedback(data: FeedbackPayload): Promise<void> {
     headers: jsonHeaders(),
     body: JSON.stringify(data),
   });
-  
+  await assertOk(res);
+}
+
+// ── Sessions ────────────────────────────────────────────────────────────────────
+
+export interface SessionMessage {
+  id: string;
+  role: 'user' | 'assistant';
+  content: string;
+  sources: ChunkModel[];
+  follow_up_suggestions: string[];
+  created_at: string;
+}
+
+export interface SessionItem {
+  id: string;
+  title: string | null;
+  created_at: string;
+  updated_at: string;
+  message_count: number;
+  last_message: string | null;
+}
+
+export interface SessionDetail {
+  id: string;
+  title: string | null;
+  created_at: string;
+  updated_at: string;
+  messages: SessionMessage[];
+}
+
+export async function listSessions(userId = 'anonymous', limit = 50): Promise<SessionItem[]> {
+  const params = new URLSearchParams({ user_id: userId, limit: String(limit) });
+  const res = await fetch(`${BASE}/sessions?${params}`, { headers: jsonHeaders() });
+  await assertOk(res);
+  return res.json();
+}
+
+export async function getSession(sessionId: string): Promise<SessionDetail> {
+  const res = await fetch(`${BASE}/sessions/${sessionId}`, { headers: jsonHeaders() });
+  await assertOk(res);
+  return res.json();
+}
+
+export async function deleteSession(sessionId: string): Promise<void> {
+  const res = await fetch(`${BASE}/sessions/${sessionId}`, {
+    method: 'DELETE',
+    headers: jsonHeaders(),
+  });
+  await assertOk(res);
+}
+
+export async function renameSession(sessionId: string, title: string): Promise<SessionItem> {
+  const res = await fetch(`${BASE}/sessions/${sessionId}`, {
+    method: 'PATCH',
+    headers: jsonHeaders(),
+    body: JSON.stringify({ title }),
+  });
+  await assertOk(res);
+  return res.json();
+}
