@@ -1,0 +1,112 @@
+import { useState, useEffect } from 'react';
+import { MessageSquare, Database, PanelLeftClose, PanelLeft, Moon, Sun } from 'lucide-react';
+import { cn } from '@/lib/utils';
+
+interface AppLayoutProps {
+  sidebar: React.ReactNode;
+  children: React.ReactNode;
+  activeView: 'chat' | 'ingestion';
+  onViewChange: (view: 'chat' | 'ingestion') => void;
+}
+
+const AppLayout = ({ sidebar, children, activeView, onViewChange }: AppLayoutProps) => {
+  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [darkMode, setDarkMode] = useState(() => {
+    if (typeof window !== 'undefined') {
+      return document.documentElement.classList.contains('dark') ||
+        window.matchMedia('(prefers-color-scheme: dark)').matches;
+    }
+    return false;
+  });
+
+  useEffect(() => {
+    document.documentElement.classList.toggle('dark', darkMode);
+  }, [darkMode]);
+
+  const NavButton = ({
+    active,
+    onClick,
+    title,
+    children: icon,
+  }: {
+    active: boolean;
+    onClick: () => void;
+    title: string;
+    children: React.ReactNode;
+  }) => (
+    <button
+      onClick={onClick}
+      className={cn(
+        'w-10 h-10 rounded-xl flex items-center justify-center transition-all duration-200',
+        active
+          ? 'bg-sidebar-accent text-sidebar-primary shadow-sm'
+          : 'text-sidebar-foreground hover:bg-sidebar-accent/40 hover:text-sidebar-accent-foreground',
+      )}
+      title={title}
+    >
+      {icon}
+    </button>
+  );
+
+  return (
+    <div className="flex h-screen overflow-hidden bg-background">
+      {/* ── Nav rail ────────────────────────────────────────────── */}
+      <div className="shrink-0 w-14 bg-sidebar flex flex-col items-center py-3 gap-1 border-r border-sidebar-border">
+        {/* Logo */}
+        <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-primary to-primary/70 flex items-center justify-center mb-3 shadow-sm">
+          <span className="text-primary-foreground font-bold text-sm">R</span>
+        </div>
+
+        <NavButton active={activeView === 'chat'} onClick={() => onViewChange('chat')} title="Chat">
+          <MessageSquare className="w-5 h-5" />
+        </NavButton>
+
+        <NavButton active={activeView === 'ingestion'} onClick={() => onViewChange('ingestion')} title="Ingestion">
+          <Database className="w-5 h-5" />
+        </NavButton>
+
+        {/* Spacer */}
+        <div className="flex-1" />
+
+        {/* Dark mode toggle */}
+        <button
+          onClick={() => setDarkMode((d) => !d)}
+          className="w-10 h-10 rounded-xl flex items-center justify-center text-sidebar-foreground hover:bg-sidebar-accent/40 transition-colors"
+          title={darkMode ? 'Mode clair' : 'Mode sombre'}
+        >
+          {darkMode ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
+        </button>
+
+        {/* Sidebar toggle */}
+        <button
+          onClick={() => setSidebarOpen(!sidebarOpen)}
+          className="w-10 h-10 rounded-xl flex items-center justify-center text-sidebar-foreground hover:bg-sidebar-accent/40 transition-colors"
+          title={sidebarOpen ? 'Masquer le panneau' : 'Afficher le panneau'}
+        >
+          {sidebarOpen ? <PanelLeftClose className="w-5 h-5" /> : <PanelLeft className="w-5 h-5" />}
+        </button>
+      </div>
+
+      {/* ── Sidebar ────────────────────────────────────────────── */}
+      {activeView === 'chat' && (
+        <div
+          className={cn(
+            'shrink-0 border-r border-sidebar-border transition-all duration-300 overflow-hidden',
+            sidebarOpen ? 'w-72' : 'w-0',
+          )}
+        >
+          <div className="w-72 h-full">
+            {sidebar}
+          </div>
+        </div>
+      )}
+
+      {/* ── Main content ───────────────────────────────────────── */}
+      <div className="flex-1 flex flex-col min-w-0">
+        {children}
+      </div>
+    </div>
+  );
+};
+
+export default AppLayout;

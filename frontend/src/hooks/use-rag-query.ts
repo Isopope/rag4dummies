@@ -1,0 +1,236 @@
+import { useState, useCallback, useRef, useEffect } from 'react';
+import { streamQueryRAG, submitFeedback } from '@/lib/api';
+import type { ChunkModel, FeedbackPayload } from '@/lib/api';
+import type { ChatMessage, MessageFeedback, MessageSource, AgentStep } from '@/types/chat';
+import type { ChatInputSubmitPayload } from '@/components/chat/ChatInput';
+import { toast } from 'sonner';
+
+function chunkToSource(c: ChunkModel): MessageSource {
+  return {
+    id: `${c.source}-${c.chunk_index}`,
+    title: c.source.split('/').pop() ?? c.source,
+    excerpt: c.page_content.slice(0, 200),
+    url: c.pdf_url,
+  };
+}
+
+function buildSummary(messages: ChatMessage[]): string {
+  return messages
+    .slice(-6)
+    .map((m) => {
+      const text = m.contents.find((c) => c.type === 'text')?.text ?? '';
+      return `${m.role === 'user' ? 'Utilisateur' : 'Assistant'}: ${text.slice(0, 500)}`;
+    })
+    .join('\n');
+}
+
+interface LastResult {
+  questionId: string;
+  question: string;
+  answer: string;
+  sources: ChunkModel[];
+  followUps: string[];
+  title?: string;
+  nRetrieved: number;
+}
+
+/** Human-readable labels for agent graph nodes */
+const NODE_LABELS: Record<string, string> = {
+  analyze_and_plan: '📋 Analyse & planification',
+  agent_reason: '🤔 Raisonnement',
+  agent_action: '🔍 Recherche documentaire',
+  compress_context: '🗜️ Compression du contexte',
+  consolidate_chunks: '📦 Consolidation des résultats',
+  rerank_prep: '📊 Préparation du classement',
+  rerank: '📊 Re-classement des résultats',
+  generate: '✍️ Génération de la réponse',
+  generate_follow_up: '❓ Suggestions de suivi',
+  generate_title: '📝 Titre de conversation',
+};
+
+function nodeLabel(node: string): string {
+  return NODE_LABELS[node] ?? `⚙️ ${node.replace(/_/g, ' ')}`;
+}
+
+export function useRagQuery() {
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [isStreaming, setIsStreaming] = useState(false);
+  const [conversationTitle, setConversationTitle] = useState<string | undefined>();
+  const lastResult = useRef<LastResult | null>(null);
+  const abortRef = useRef<AbortController | null>(null);
+  // Always-current ref so callbacks don't need messages in dep array
+  const messagesRef = useRef<ChatMessage[]>([]);
+  useEffect(() => {
+    messagesRef.current = messages;
+  }, [messages]);
+
+  const sendMessage = useCallback(async (payload: ChatInputSubmitPayload | string) => {
+    const text = typeof payload === 'string' ? payload : payload.text;
+    const images = typeof payload === 'string' ? [] : payload.images;
+    if (!text.trim()) return;
+
+    // Cancel any in-progress stream
+    abortRef.current?.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
+
+    const conversationSummary = buildSummary(messagesRef.current);
+
+    const userMsg: ChatMessage = {
+      id: `u-${Date.now()}`,
+      role: 'user',
+      contents: [{ type: 'text', text }],
+      timestamp: new Date(),
+      attachedImages: images.length
+        ? images.map((i) => ({ id: i.id, url: i.url, name: i.name }))
+        : undefined,
+    };
+
+    const assistantId = `a-${Date.now() + 1}`;
+    const assistantPlaceholder: ChatMessage = {
+      id: assistantId,
+      role: 'assistant',
+      contents: [{ type: 'text', text: '' }],
+      timestamp: new Date(),
+      isStreaming: true,
+      steps: [],
+    };
+
+    setMessages((prev) => [...prev, userMsg, assistantPlaceholder]);
+    setIsStreaming(true);
+
+    let accText = '';
+    let finalSources: ChunkModel[] = [];
+    let finalFollowUps: string[] = [];
+    let finalTitle: string | undefined;
+    const steps: AgentStep[] = [];
+
+    try {
+      for await (const event of streamQueryRAG(
+        { question: text, conversation_summary: conversationSummary },
+        controller.signal,
+      )) {
+        if (event.type === 'node_update' && event.node) {
+          // Mark previous running step as done
+          const prev = steps.find((s) => s.status === 'running');
+          if (prev) prev.status = 'done';
+
+          // Add new step
+          steps.push({
+            node: event.node,
+            message: event.message || nodeLabel(event.node),
+            timestamp: new Date(),
+            status: 'running',
+          });
+
+          // Update message steps (spread to trigger React re-render)
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.id === assistantId
+                ? { ...m, steps: [...steps] }
+                : m,
+            ),
+          );
+        } else if (event.type === 'answer' && event.answer != null) {
+          accText = event.answer;
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.id === assistantId
+                ? { ...m, contents: [{ type: 'text', text: accText }], steps: [...steps] }
+                : m,
+            ),
+          );
+        } else if (event.type === 'done') {
+          if (event.answer != null) accText = event.answer;
+          finalSources = event.sources ?? [];
+          finalFollowUps = event.follow_up_suggestions ?? [];
+          finalTitle = event.conversation_title;
+        } else if (event.type === 'error') {
+          throw new Error(event.error ?? 'Erreur SSE');
+        }
+      }
+
+      // Mark all remaining steps as done
+      steps.forEach((s) => { s.status = 'done'; });
+
+      if (finalTitle) setConversationTitle(finalTitle);
+
+      lastResult.current = {
+        questionId: event.question_id ?? '',
+        question: text,
+        answer: accText,
+        sources: finalSources,
+        followUps: finalFollowUps,
+        title: finalTitle,
+        nRetrieved: finalSources.length,
+      };
+
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.id === assistantId
+            ? {
+                ...m,
+                contents: [{ type: 'text', text: accText }],
+                isStreaming: false,
+                sources: finalSources.length ? finalSources.map(chunkToSource) : undefined,
+                followUpSuggestions: finalFollowUps.length ? finalFollowUps : undefined,
+                steps: [...steps],
+              }
+            : m,
+        ),
+      );
+    } catch (err) {
+      if ((err as Error).name === 'AbortError') return;
+      const msg = err instanceof Error ? err.message : 'Erreur de connexion';
+      toast.error(`Erreur : ${msg}`);
+      steps.forEach((s) => { s.status = 'done'; });
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.id === assistantId
+            ? {
+                ...m,
+                contents: [{ type: 'text', text: `❌ ${msg}` }],
+                isStreaming: false,
+                steps: [...steps],
+              }
+            : m,
+        ),
+      );
+    } finally {
+      setIsStreaming(false);
+    }
+  }, []);
+
+  const sendFeedback = useCallback(async (messageId: string, feedback: MessageFeedback) => {
+    setMessages((prev) => prev.map((m) => (m.id === messageId ? { ...m, feedback } : m)));
+    const result = lastResult.current;
+    if (!result) return;
+    try {
+      const payload: FeedbackPayload = {
+        question_id: result.questionId || undefined,
+        question: result.question,
+        answer: result.answer,
+        rating: feedback.vote === 'up' ? 5 : 1,
+        comment: feedback.explanation,
+        conversation_title: result.title,
+        sources: result.sources,
+        follow_up_suggestions: result.followUps,
+        n_retrieved: result.nRetrieved,
+      };
+      await submitFeedback(payload);
+      toast.success(feedback.vote === 'up' ? 'Merci pour votre retour !' : 'Retour enregistré.');
+    } catch {
+      toast.error("Impossible d'enregistrer le feedback.");
+    }
+  }, []);
+
+  const clearMessages = useCallback(() => {
+    abortRef.current?.abort();
+    setMessages([]);
+    setIsStreaming(false);
+    setConversationTitle(undefined);
+    lastResult.current = null;
+    messagesRef.current = [];
+  }, []);
+
+  return { messages, isSt
