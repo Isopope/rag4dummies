@@ -138,6 +138,91 @@ class ConversationRepository:
         result = await self._session.execute(stmt)
         return list(result.scalars().all())
 
+    # ── Sessions (création + turns) ────────────────────────────────────────────
+
+    async def create_session(
+        self,
+        user_id: str = "anonymous",
+        title: str | None = None,
+    ) -> Conversation:
+        """Crée une nouvelle session de chat vide."""
+        conv = Conversation(user_id=user_id, title=title)
+        self._session.add(conv)
+        await self._session.flush()
+        await self._session.refresh(conv)
+        return conv
+
+    async def append_turn(
+        self,
+        *,
+        session_id: str,
+        question: str,
+        answer: str,
+        sources: list[dict[str, Any]] | None = None,
+        follow_up_suggestions: list[str] | None = None,
+        n_retrieved: int = 0,
+        question_id: str | None = None,
+        title: str | None = None,
+    ) -> tuple[Message, Message] | None:
+        """Ajoute un tour (question + réponse) à une session existante.
+
+        Met à jour le titre si la session n'en a pas encore.
+        Retourne None si session_id invalide ou introuvable.
+        """
+        try:
+            conv_uuid = uuid.UUID(session_id)
+        except ValueError:
+            return None
+
+        result = await self._session.execute(
+            select(Conversation).where(Conversation.id == conv_uuid)
+        )
+        conv = result.scalar_one_or_none()
+        if conv is None:
+            return None
+
+        # Ne remplace le titre que si la session n'en a pas encore
+        if title and not conv.title:
+            conv.title = title
+
+        user_msg = Message(
+            conversation_id=conv.id,
+            role=ROLE_USER,
+            content=question,
+        )
+
+        metadata = {
+            "follow_up_suggestions": follow_up_suggestions or [],
+            "n_retrieved":           n_retrieved,
+        }
+
+        asst_msg = Message(
+            conversation_id=conv.id,
+            role=ROLE_ASSISTANT,
+            content=answer,
+            sources_json=json.dumps(sources or [], ensure_ascii=False),
+            metadata_json=json.dumps(metadata, ensure_ascii=False),
+        )
+
+        self._session.add_all([user_msg, asst_msg])
+        await self._session.flush()
+        return user_msg, asst_msg
+
+    async def update_title(self, session_id: str, title: str) -> bool:
+        """Met à jour le titre d'une session (force, même si déjà défini)."""
+        try:
+            conv_uuid = uuid.UUID(session_id)
+        except ValueError:
+            return False
+        result = await self._session.execute(
+            select(Conversation).where(Conversation.id == conv_uuid)
+        )
+        conv = result.scalar_one_or_none()
+        if conv is None:
+            return False
+        conv.title = title
+        return True
+
     # ── Suppression ────────────────────────────────────────────────────────────
 
     async def delete(self, conversation_id: uuid.UUID) -> bool:
