@@ -7,6 +7,7 @@ interface AuthContextValue {
   user: UserInfo | null;
   isAuthenticated: boolean;
   isAdmin: boolean;
+  isLoading: boolean;
   login: (email: string, password: string) => Promise<void>;
   logout: () => void;
 }
@@ -16,10 +17,12 @@ const AuthContext = createContext<AuthContextValue | null>(null);
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [token, setTokenState] = useState<string | null>(getToken);
   const [user, setUser] = useState<UserInfo | null>(null);
+  const [isLoading, setIsLoading] = useState<boolean>(() => !!getToken());
 
   // Restaurer le profil utilisateur depuis le token stocké au démarrage
   useEffect(() => {
-    if (!token) { setUser(null); return; }
+    if (!token) { setUser(null); setIsLoading(false); return; }
+    setIsLoading(true);
     getMe(token)
       .then(setUser)
       .catch(() => {
@@ -27,7 +30,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         clearToken();
         setTokenState(null);
         setUser(null);
-      });
+      })
+      .finally(() => setIsLoading(false));
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const login = useCallback(async (email: string, password: string) => {
@@ -50,6 +54,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       user,
       isAuthenticated: !!token && !!user,
       isAdmin: user?.role === 'admin',
+      isLoading,
       login,
       logout,
     }}>

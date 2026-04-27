@@ -197,10 +197,11 @@ export async function queryRAG(request: QueryRequest): Promise<QueryResponse> {
 export async function* streamQueryRAG(
   request: QueryRequest,
   signal?: AbortSignal,
+  token?: string | null,
 ): AsyncGenerator<StreamEvent> {
   const res = await fetch(`${BASE}/query/stream`, {
     method: 'POST',
-    headers: jsonHeaders(),
+    headers: jsonHeaders(token),
     body: JSON.stringify(request),
     signal,
   });

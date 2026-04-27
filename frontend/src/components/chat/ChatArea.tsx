@@ -1,5 +1,5 @@
 import { useRef, useEffect, useMemo, useState, useCallback } from 'react';
-import { ArrowDown } from 'lucide-react';
+import { Bot, ArrowDown } from 'lucide-react';
 import { ChatMessage, MessageFeedback } from '@/types/chat';
 import MessageRenderer from './MessageRenderer';
 import FollowUpSuggestions from './FollowUpSuggestions';

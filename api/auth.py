@@ -81,6 +81,10 @@ fastapi_users = FastAPIUsers[User, uuid.UUID](get_user_manager, [auth_backend])
 #   async def my_route(user: User = Depends(current_active_user)): ...
 current_active_user = fastapi_users.current_user(active=True)
 
+# Dépendance — utilisateur optionnel (None si non authentifié)
+#   async def my_route(user: User | None = Depends(current_optional_user)): ...
+current_optional_user = fastapi_users.current_user(active=True, optional=True)
+
 
 # Dépendance — administrateur uniquement (role == "admin")
 #   async def my_route(_: User = Depends(current_admin_user)): ...

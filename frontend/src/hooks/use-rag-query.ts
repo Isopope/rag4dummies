@@ -4,6 +4,7 @@ import type { ChunkModel, FeedbackPayload, SessionDetail } from '@/lib/api';
 import type { ChatMessage, MessageFeedback, MessageSource, AgentStep } from '@/types/chat';
 import type { ChatInputSubmitPayload } from '@/components/chat/ChatInput';
 import { toast } from 'sonner';
+import { useAuth } from '@/context/AuthContext';
 
 function chunkToSource(c: ChunkModel): MessageSource {
   return {
@@ -53,6 +54,7 @@ function nodeLabel(node: string): string {
 }
 
 export function useRagQuery() {
+  const { token } = useAuth();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [isStreaming, setIsStreaming] = useState(false);
   const [conversationTitle, setConversationTitle] = useState<string | undefined>();
@@ -119,6 +121,7 @@ export function useRagQuery() {
       for await (const event of streamQueryRAG(
         { question: text, conversation_summary: conversationSummary, session_id: currentSessionId, model: modelId },
         controller.signal,
+        token,
       )) {
         if (event.type === 'node_update' && event.node) {
           // Mark previous running step as done
