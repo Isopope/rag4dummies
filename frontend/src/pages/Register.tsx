@@ -3,8 +3,8 @@ import { Link, useNavigate } from 'react-router-dom';
 import { register } from '@/lib/api';
 import { toast } from 'sonner';
 
-const BRAND_BLUE = '#1e3a8a';
-const BRAND_RED  = '#e03120';
+const BRAND_BLUE   = '#384596';
+const BRAND_ORANGE = '#F45A00';
 
 export default function Register() {
   const [email, setEmail]     = useState('');
@@ -40,15 +40,11 @@ export default function Register() {
       {/* ── Panneau gauche — branding ───────────────────────────── */}
       <div
         className="hidden lg:flex flex-col justify-between w-[45%] px-16 py-14"
-        style={{ background: `linear-gradient(150deg, ${BRAND_BLUE} 0%, #0f2050 100%)` }}
+        style={{ background: `linear-gradient(150deg, ${BRAND_BLUE} 0%, #1f2d72 100%)` }}
       >
         <div>
-          <div className="flex items-baseline gap-0 select-none">
-            <span style={{ fontSize: 44, fontWeight: 900, color: '#fff', lineHeight: 1 }}>G</span>
-            <span style={{ fontSize: 16, fontWeight: 900, color: '#fff', lineHeight: 1, position: 'relative', top: '-4px' }}>4</span>
-            <span style={{ fontSize: 44, fontWeight: 900, color: BRAND_RED, lineHeight: 1 }}>AI</span>
-          </div>
-          <p className="text-white/50 text-sm mt-1 tracking-wide">Gouvernance 4 AI</p>
+          <img src="/go4aiLogo.png" alt="Go4AI" className="h-10 w-auto" />
+          <p className="text-white/50 text-sm mt-2 tracking-wide">Gouvernance 4 AI</p>
         </div>
 
         <div className="space-y-5">
@@ -65,7 +61,10 @@ export default function Register() {
           </p>
         </div>
 
-        <p className="text-white/25 text-xs">© 2026 Go4AI — Tous droits réservés</p>
+        <div className="flex items-center gap-3">
+          <img src="/aghadoeLogo.png" alt="Aghadoe" className="h-6 w-auto opacity-50" />
+          <p className="text-white/25 text-xs">© 2026 Aghadoe — Tous droits réservés</p>
+        </div>
       </div>
 
       {/* ── Panneau droit — formulaire ──────────────────────────── */}
@@ -111,7 +110,7 @@ export default function Register() {
               type="submit"
               disabled={loading}
               className="w-full py-2.5 px-4 rounded-lg text-sm font-semibold text-white transition-opacity disabled:opacity-50"
-              style={{ background: `linear-gradient(90deg, ${BRAND_BLUE} 0%, #2451b3 100%)` }}
+              style={{ background: `linear-gradient(90deg, ${BRAND_BLUE} 0%, #4a5cb8 100%)` }}
             >
               {loading ? 'Création du compte...' : "S'inscrire"}
             </button>
@@ -119,7 +118,7 @@ export default function Register() {
 
           <p className="text-center text-xs text-muted-foreground">
             Déjà un compte ?{' '}
-            <Link to="/login" className="font-semibold" style={{ color: BRAND_RED }}>Se connecter</Link>
+            <Link to="/login" className="font-semibold" style={{ color: BRAND_ORANGE }}>Se connecter</Link>
           </p>
         </div>
       </div>

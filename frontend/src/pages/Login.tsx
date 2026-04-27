@@ -3,18 +3,8 @@ import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/context/AuthContext';
 import { toast } from 'sonner';
 
-const BRAND_BLUE = '#1e3a8a';
-const BRAND_RED  = '#e03120';
-
-function Go4AILogo({ size = 48 }: { size?: number }) {
-  return (
-    <div className="flex items-baseline select-none" style={{ gap: 0 }}>
-      <span style={{ fontSize: size, fontWeight: 900, color: BRAND_BLUE, fontFamily: 'Inter, sans-serif', lineHeight: 1 }}>G</span>
-      <span style={{ fontSize: size * 0.38, fontWeight: 900, color: BRAND_BLUE, fontFamily: 'Inter, sans-serif', lineHeight: 1, position: 'relative', top: '-0.05em' }}>4</span>
-      <span style={{ fontSize: size, fontWeight: 900, color: BRAND_RED, fontFamily: 'Inter, sans-serif', lineHeight: 1 }}>AI</span>
-    </div>
-  );
-}
+const BRAND_BLUE   = '#384596';
+const BRAND_ORANGE = '#F45A00';
 
 export default function Login() {
   const [email, setEmail]       = useState('');
@@ -38,19 +28,15 @@ export default function Login() {
 
   return (
     <div className="min-h-screen flex">
-      {/* ── Panneau gauche — branding ───────────────────────────── */}
+      {/* ── Panneau gauche — branding ──────────────────────────── */}
       <div
         className="hidden lg:flex flex-col justify-between w-[45%] px-16 py-14"
-        style={{ background: `linear-gradient(150deg, ${BRAND_BLUE} 0%, #0f2050 100%)` }}
+        style={{ background: `linear-gradient(150deg, ${BRAND_BLUE} 0%, #1f2d72 100%)` }}
       >
-        {/* Logo */}
+        {/* Logo Go4AI */}
         <div>
-          <div className="flex items-baseline select-none gap-0">
-            <span style={{ fontSize: 44, fontWeight: 900, color: '#fff', lineHeight: 1 }}>G</span>
-            <span style={{ fontSize: 16, fontWeight: 900, color: '#fff', lineHeight: 1, position: 'relative', top: '-4px' }}>4</span>
-            <span style={{ fontSize: 44, fontWeight: 900, color: BRAND_RED, lineHeight: 1 }}>AI</span>
-          </div>
-          <p className="text-white/50 text-sm mt-1 tracking-wide">Gouvernance 4 AI</p>
+          <img src="/go4aiLogo.png" alt="Go4AI" className="h-10 w-auto" />
+          <p className="text-white/50 text-sm mt-2 tracking-wide">Gouvernance 4 AI</p>
         </div>
 
         {/* Tagline centrale */}
@@ -59,7 +45,7 @@ export default function Login() {
           <h2 className="text-white text-4xl font-extrabold leading-tight">
             Exploitez
             <br />
-            l'intelligence
+            l’intelligence
             <br />
             de vos documents.
           </h2>
@@ -68,16 +54,19 @@ export default function Login() {
           </p>
         </div>
 
-        {/* Footer */}
-        <p className="text-white/25 text-xs">© 2026 Go4AI — Tous droits réservés</p>
+        {/* Footer Aghadoe */}
+        <div className="flex items-center gap-3">
+          <img src="/aghadoeLogo.png" alt="Aghadoe" className="h-6 w-auto opacity-50" />
+          <p className="text-white/25 text-xs">© 2026 Aghadoe — Tous droits réservés</p>
+        </div>
       </div>
 
-      {/* ── Panneau droit — formulaire ──────────────────────────── */}
+      {/* ── Panneau droit — formulaire ────────────────────────── */}
       <div className="flex-1 flex items-center justify-center bg-background px-8">
         <div className="w-full max-w-sm space-y-8">
           {/* Logo mobile */}
           <div className="lg:hidden flex justify-center">
-            <Go4AILogo size={40} />
+            <img src="/go4aiLogo.png" alt="Go4AI" className="h-10 w-auto" />
           </div>
 
           <div>
@@ -118,7 +107,7 @@ export default function Login() {
               type="submit"
               disabled={loading}
               className="w-full py-2.5 px-4 rounded-lg text-sm font-semibold text-white transition-opacity disabled:opacity-50"
-              style={{ background: `linear-gradient(90deg, ${BRAND_BLUE} 0%, #2451b3 100%)` }}
+              style={{ background: `linear-gradient(90deg, ${BRAND_BLUE} 0%, #4a5cb8 100%)` }}
             >
               {loading ? 'Connexion...' : 'Se connecter'}
             </button>
@@ -126,7 +115,7 @@ export default function Login() {
 
           <p className="text-center text-xs text-muted-foreground">
             Pas encore de compte ?{' '}
-            <Link to="/register" className="font-semibold" style={{ color: BRAND_RED }}>Créer un compte</Link>
+            <Link to="/register" className="font-semibold" style={{ color: BRAND_ORANGE }}>Créer un compte</Link>
           </p>
         </div>
       </div>

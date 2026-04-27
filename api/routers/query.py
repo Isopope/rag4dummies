@@ -11,7 +11,7 @@ from fastapi.responses import StreamingResponse
 from loguru import logger
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ..auth import current_active_user
+from ..auth import current_active_user, current_optional_user
 from ..deps import get_agent_for_model, get_document_store
 from ..models import BboxModel, ChunkModel, QueryRequest, QueryResponse, StreamEvent
 from db import get_db_session
@@ -139,7 +139,7 @@ async def query_stream(
     body: QueryRequest,
     doc_store=Depends(get_document_store),
     db_session: AsyncSession = Depends(get_db_session),
-    user: User = Depends(current_active_user),
+    user: User | None = Depends(current_optional_user),
 ):
     agent = get_agent_for_model(body.model)
     loop = asyncio.get_event_loop()
@@ -179,42 +179,43 @@ async def query_stream(
 
             # Sentinelle de fin
             if event is None:
-                # ── Auto-save session ──────────────────────────────────────────
+                # ── Auto-save session (uniquement si authentifié) ──────────────
                 saved_session_id: str | None = body.session_id
-                try:
-                    repo = ConversationRepository(db_session)
-                    if saved_session_id:
-                        # Vérifier que la session appartient bien à l'utilisateur
-                        import uuid as _uuid
-                        existing = await repo.get(_uuid.UUID(saved_session_id))
-                        if existing is None or existing.user_id != str(user.id):
-                            saved_session_id = None  # session invalide → créer une nouvelle
-                    if saved_session_id:
-                        await repo.append_turn(
-                            session_id            = saved_session_id,
-                            question              = body.question,
-                            answer                = answer,
-                            sources               = [c.model_dump() for c in sources],
-                            follow_up_suggestions = follow_ups,
-                            n_retrieved           = len(sources),
-                            question_id           = question_id,
-                            title                 = title,
-                        )
-                    else:
-                        conv = await repo.create_session(user_id=str(user.id), title=title)
-                        saved_session_id = str(conv.id)
-                        await repo.append_turn(
-                            session_id            = saved_session_id,
-                            question              = body.question,
-                            answer                = answer,
-                            sources               = [c.model_dump() for c in sources],
-                            follow_up_suggestions = follow_ups,
-                            n_retrieved           = len(sources),
-                            question_id           = question_id,
-                        )
-                    await db_session.commit()
-                except Exception as exc:
-                    logger.warning("Auto-save session échoué : {}", exc)
+                if user is not None:
+                    try:
+                        repo = ConversationRepository(db_session)
+                        if saved_session_id:
+                            # Vérifier que la session appartient bien à l'utilisateur
+                            import uuid as _uuid
+                            existing = await repo.get(_uuid.UUID(saved_session_id))
+                            if existing is None or existing.user_id != str(user.id):
+                                saved_session_id = None  # session invalide → créer une nouvelle
+                        if saved_session_id:
+                            await repo.append_turn(
+                                session_id            = saved_session_id,
+                                question              = body.question,
+                                answer                = answer,
+                                sources               = [c.model_dump() for c in sources],
+                                follow_up_suggestions = follow_ups,
+                                n_retrieved           = len(sources),
+                                question_id           = question_id,
+                                title                 = title,
+                            )
+                        else:
+                            conv = await repo.create_session(user_id=str(user.id), title=title)
+                            saved_session_id = str(conv.id)
+                            await repo.append_turn(
+                                session_id            = saved_session_id,
+                                question              = body.question,
+                                answer                = answer,
+                                sources               = [c.model_dump() for c in sources],
+                                follow_up_suggestions = follow_ups,
+                                n_retrieved           = len(sources),
+                                question_id           = question_id,
+                            )
+                        await db_session.commit()
+                    except Exception as exc:
+                        logger.warning("Auto-save session échoué : {}", exc)
                 # ───────────────────────────────────────────────────────────────
                 done_evt = StreamEvent(
                     type                  = "done",

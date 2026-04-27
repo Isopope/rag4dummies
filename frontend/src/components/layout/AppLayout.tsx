@@ -57,12 +57,8 @@ const AppLayout = ({ sidebar, children, activeView, onViewChange }: AppLayoutPro
       {/* ── Nav rail ────────────────────────────────────────────── */}
       <div className="shrink-0 w-14 bg-sidebar flex flex-col items-center py-3 gap-1 border-r border-sidebar-border">
         {/* Logo */}
-        <div className="flex flex-col items-center mb-3 gap-0 select-none">
-          <div className="flex items-baseline" style={{ gap: 0 }}>
-            <span style={{ fontSize: 18, fontWeight: 900, color: '#fff', lineHeight: 1 }}>G</span>
-            <span style={{ fontSize: 7, fontWeight: 900, color: '#fff', lineHeight: 1, position: 'relative', top: '-2px' }}>4</span>
-            <span style={{ fontSize: 18, fontWeight: 900, color: '#e03120', lineHeight: 1 }}>AI</span>
-          </div>
+        <div className="flex flex-col items-center mb-3">
+          <img src="/go4aiLogo.png" alt="Go4AI" className="h-7 w-auto" />
         </div>
 
         <NavButton active={activeView === 'chat'} onClick={() => onViewChange('chat')} title="Chat">

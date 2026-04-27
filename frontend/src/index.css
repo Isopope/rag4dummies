@@ -12,56 +12,56 @@
     --sidebar-width-folded: 3.5rem;
 
     /* ── Colors (Light) ─────────────────────────────────────────── */
-    --background: 220 30% 97%;
-    --foreground: 228 45% 10%;
+    --background: 180 20% 97%;
+    --foreground: 232 45% 12%;
 
     --card: 0 0% 100%;
-    --card-foreground: 228 45% 10%;
+    --card-foreground: 232 45% 12%;
 
     --popover: 0 0% 100%;
-    --popover-foreground: 228 45% 10%;
+    --popover-foreground: 232 45% 12%;
 
-    --primary: 228 72% 34%;
+    --primary: 232 46% 40%;
     --primary-foreground: 0 0% 100%;
 
-    --secondary: 220 14% 96%;
-    --secondary-foreground: 224 20% 20%;
+    --secondary: 180 35% 94%;
+    --secondary-foreground: 232 40% 20%;
 
-    --muted: 220 14% 96%;
+    --muted: 180 20% 95%;
     --muted-foreground: 220 9% 46%;
 
-    --accent: 5 83% 52%;
+    --accent: 22 100% 48%;
     --accent-foreground: 0 0% 100%;
 
-    --destructive: 5 83% 52%;
+    --destructive: 0 84% 50%;
     --destructive-foreground: 0 0% 100%;
 
-    --border: 220 20% 86%;
-    --input: 220 20% 86%;
-    --ring: 228 72% 34%;
+    --border: 180 15% 87%;
+    --input: 180 15% 87%;
+    --ring: 232 46% 40%;
 
     --radius: 0.75rem;
 
     /* ── Sidebar ────────────────────────────────────────────────── */
-    --sidebar-background: 230 60% 12%;
-    --sidebar-foreground: 220 15% 70%;
-    --sidebar-primary: 5 83% 60%;
+    --sidebar-background: 232 50% 14%;
+    --sidebar-foreground: 180 15% 72%;
+    --sidebar-primary: 22 100% 55%;
     --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 230 50% 18%;
-    --sidebar-accent-foreground: 220 15% 90%;
-    --sidebar-border: 230 40% 20%;
-    --sidebar-ring: 5 83% 60%;
-    --sidebar-muted: 230 45% 24%;
+    --sidebar-accent: 232 45% 20%;
+    --sidebar-accent-foreground: 180 10% 92%;
+    --sidebar-border: 232 40% 22%;
+    --sidebar-ring: 22 100% 55%;
+    --sidebar-muted: 232 42% 26%;
 
     /* ── Chat-specific tokens ───────────────────────────────────── */
-    --user-bubble: 220 14% 96%;
-    --user-bubble-foreground: 224 20% 12%;
-    --agent-message-foreground: 224 20% 15%;
+    --user-bubble: 180 40% 92%;
+    --user-bubble-foreground: 232 40% 12%;
+    --agent-message-foreground: 232 40% 15%;
 
     /* ── Timeline ───────────────────────────────────────────────── */
     --timeline-bg: 220 14% 97%;
     --timeline-border: 220 13% 90%;
-    --timeline-dot: 228 72% 34%;
+    --timeline-dot: 232 46% 40%;
     --timeline-dot-done: 152 60% 42%;
 
     /* ── Status colors ──────────────────────────────────────────── */
@@ -83,58 +83,58 @@
   }
 
   .dark {
-    --background: 228 22% 8%;
-    --foreground: 220 15% 90%;
+    --background: 232 22% 8%;
+    --foreground: 180 10% 90%;
 
-    --card: 228 20% 12%;
-    --card-foreground: 220 15% 90%;
+    --card: 232 20% 12%;
+    --card-foreground: 180 10% 90%;
 
-    --popover: 228 20% 12%;
-    --popover-foreground: 220 15% 90%;
+    --popover: 232 20% 12%;
+    --popover-foreground: 180 10% 90%;
 
-    --primary: 228 72% 50%;
+    --primary: 232 46% 58%;
     --primary-foreground: 0 0% 100%;
 
-    --secondary: 228 18% 16%;
-    --secondary-foreground: 220 15% 85%;
+    --secondary: 232 18% 16%;
+    --secondary-foreground: 180 10% 85%;
 
-    --muted: 228 18% 16%;
-    --muted-foreground: 220 10% 55%;
+    --muted: 232 18% 16%;
+    --muted-foreground: 180 8% 55%;
 
-    --accent: 5 83% 58%;
+    --accent: 22 100% 55%;
     --accent-foreground: 0 0% 100%;
 
-    --destructive: 5 83% 58%;
+    --destructive: 0 84% 55%;
     --destructive-foreground: 0 0% 100%;
 
-    --border: 228 15% 20%;
-    --input: 228 15% 20%;
-    --ring: 228 72% 50%;
+    --border: 232 15% 20%;
+    --input: 232 15% 20%;
+    --ring: 232 46% 58%;
 
     /* ── Sidebar (dark) ─────────────────────────────────────────── */
-    --sidebar-background: 230 65% 7%;
-    --sidebar-foreground: 220 15% 65%;
-    --sidebar-primary: 5 83% 62%;
+    --sidebar-background: 232 55% 8%;
+    --sidebar-foreground: 180 12% 65%;
+    --sidebar-primary: 22 100% 58%;
     --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 230 55% 14%;
-    --sidebar-accent-foreground: 220 15% 85%;
-    --sidebar-border: 230 45% 16%;
-    --sidebar-ring: 5 83% 62%;
-    --sidebar-muted: 230 50% 20%;
+    --sidebar-accent: 232 50% 14%;
+    --sidebar-accent-foreground: 180 10% 85%;
+    --sidebar-border: 232 45% 18%;
+    --sidebar-ring: 22 100% 58%;
+    --sidebar-muted: 232 48% 20%;
 
     /* ── Chat (dark) ────────────────────────────────────────────── */
-    --user-bubble: 228 18% 16%;
-    --user-bubble-foreground: 220 15% 90%;
-    --agent-message-foreground: 220 15% 88%;
+    --user-bubble: 232 18% 16%;
+    --user-bubble-foreground: 180 10% 90%;
+    --agent-message-foreground: 180 10% 88%;
 
     /* ── Timeline (dark) ────────────────────────────────────────── */
-    --timeline-bg: 228 18% 12%;
-    --timeline-border: 228 15% 20%;
+    --timeline-bg: 232 18% 12%;
+    --timeline-border: 232 15% 20%;
 
     /* ── Other (dark) ───────────────────────────────────────────── */
-    --connector-card: 228 20% 12%;
-    --connector-card-hover: 228 18% 16%;
-    --chat-input: 228 20% 12%;
+    --connector-card: 232 20% 12%;
+    --connector-card-hover: 232 18% 16%;
+    --chat-input: 232 20% 12%;
   }
 }
 

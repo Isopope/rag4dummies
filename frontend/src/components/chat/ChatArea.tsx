@@ -30,12 +30,8 @@ const getGreeting = () => GREETINGS[Math.floor(Math.random() * GREETINGS.length)
 const WelcomeScreen = ({ greeting, onSelect }: { greeting: string; onSelect?: (s: string) => void }) => (
   <div className="flex-1 flex items-center justify-center animate-fade-in">
     <div className="flex flex-col items-center gap-6 max-w-lg text-center px-4">
-      {/* G4AI bicolor logotype */}
-      <div className="flex items-baseline select-none" style={{ gap: 0 }}>
-        <span style={{ fontSize: 64, fontWeight: 900, color: '#1e3a8a', lineHeight: 1, fontFamily: 'Inter, sans-serif' }}>G</span>
-        <span style={{ fontSize: 24, fontWeight: 900, color: '#1e3a8a', lineHeight: 1, position: 'relative', top: '-6px', fontFamily: 'Inter, sans-serif' }}>4</span>
-        <span style={{ fontSize: 64, fontWeight: 900, color: '#e03120', lineHeight: 1, fontFamily: 'Inter, sans-serif' }}>AI</span>
-      </div>
+      {/* Go4AI logo */}
+      <img src="/go4aiLogo.png" alt="Go4AI" className="h-16 w-auto" />
 
       <div className="space-y-2">
         <h2 className="text-2xl font-bold text-foreground">{greeting}</h2>
