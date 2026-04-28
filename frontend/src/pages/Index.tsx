@@ -14,6 +14,7 @@ import { useIngest } from '@/hooks/use-ingest';
 import { useDocuments } from '@/hooks/use-documents';
 import { getSession } from '@/lib/api';
 import { useAuth } from '@/context/AuthContext';
+import { PdfGroundingModal } from '@/components/chat/PdfGroundingModal';
 
 const CHAT_ID_PARAM = 'chat-id';
 
@@ -25,6 +26,7 @@ const Index = () => {
     messageId: string;
     sources: MessageSource[];
   } | null>(null);
+  const [viewerSource, setViewerSource] = useState<MessageSource | null>(null);
 
   const { messages, isStreaming, conversationTitle, sessionId, sendMessage, sendFeedback, clearMessages, loadSession } =
     useRagQuery();
@@ -220,6 +222,7 @@ const Index = () => {
                 messageId={documentSidebar.messageId}
                 sources={documentSidebar.sources}
                 onClose={() => setDocumentSidebar(null)}
+                onOpenViewer={(source) => setViewerSource(source)}
               />
             </div>
           )}
@@ -232,6 +235,11 @@ const Index = () => {
           onDeleteDocument={doDeleteDoc}
         />
       )}
+      
+      <PdfGroundingModal 
+        source={viewerSource} 
+        onClose={() => setViewerSource(null)} 
+      />
     </AppLayout>
   );
 };

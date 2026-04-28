@@ -50,6 +50,9 @@ export interface MessageSource {
   title: string;
   excerpt?: string;
   url?: string;
+  bboxes?: { page: number; x0: number; y0: number; x1: number; y1: number }[];
+  pageIdx?: number;
+  kind?: string;
 }
 
 export interface AttachedImage {

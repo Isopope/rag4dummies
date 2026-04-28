@@ -12,6 +12,9 @@ function chunkToSource(c: ChunkModel): MessageSource {
     title: c.source.split('/').pop() ?? c.source,
     excerpt: c.page_content.slice(0, 200),
     url: c.pdf_url,
+    bboxes: c.bboxes,
+    pageIdx: c.page_idx,
+    kind: c.kind,
   };
 }
 
@@ -272,6 +275,9 @@ export function useRagQuery() {
           title: c.source.split('/').pop() ?? c.source,
           excerpt: c.page_content.slice(0, 200),
           url: c.pdf_url,
+          bboxes: c.bboxes,
+          pageIdx: c.page_idx,
+          kind: c.kind,
         }));
         restored.push({
           id: m.id,
