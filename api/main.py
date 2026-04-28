@@ -81,7 +81,8 @@ def create_app() -> FastAPI:
     )
 
     # ── Routers ───────────────────────────────────────────────────────────────
-    from .routers import ingest, query, sources, feedback, documents, jobs, connectors, entities
+    from .routers import ingest, query, sources, feedback, documents, jobs, connectors, entities, sessions
+    from .routers import models as models_router
     from .auth import fastapi_users, auth_backend, UserRead, UserCreate, UserUpdate
 
     # Authentification
