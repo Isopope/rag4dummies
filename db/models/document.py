@@ -2,9 +2,9 @@
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 
-from sqlalchemy import DateTime, Integer, String, Text, func
+from sqlalchemy import Date, DateTime, Integer, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from .base import Base
@@ -51,6 +51,16 @@ class Document(Base):
 
     # Compteur de tentatives automatiques (beat : retry_error_documents)
     retry_count: Mapped[int] = mapped_column(Integer, default=0)
+
+    # Métadonnées métier
+    entity: Mapped[str | None] = mapped_column(
+        String(100), nullable=True, index=True,
+        comment="Entité propriétaire (ex. 'dassault', 'thales')",
+    )
+    validity_date: Mapped[date | None] = mapped_column(
+        Date, nullable=True,
+        comment="Date limite de validité — exclusion automatique après cette date",
+    )
 
     # Résultat
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)

@@ -26,6 +26,8 @@ class DocumentRepository:
         parser: str | None = None,
         strategy: str | None = None,
         task_id: str | None = None,
+        entity: str | None = None,
+        validity_date: str | None = None,
     ) -> Document:
         """Crée ou récupère un Document pour ce source_path, statut PENDING.
 
@@ -33,13 +35,16 @@ class DocumentRepository:
         """
         doc = await self.get_by_source(source_path)
         if doc is None:
+            from datetime import date as _date
             doc = Document(
-                source_path = source_path,
-                filename    = Path(source_path).name,
-                status      = DocumentStatus.PENDING,
-                parser      = parser,
-                strategy    = strategy,
-                task_id     = task_id,
+                source_path   = source_path,
+                filename      = Path(source_path).name,
+                status        = DocumentStatus.PENDING,
+                parser        = parser,
+                strategy      = strategy,
+                task_id       = task_id,
+                entity        = entity,
+                validity_date = _date.fromisoformat(validity_date) if validity_date else None,
             )
             self._session.add(doc)
             await self._session.flush()
@@ -52,6 +57,11 @@ class DocumentRepository:
             doc.strategy      = strategy or doc.strategy
             if task_id:
                 doc.task_id = task_id
+            if entity is not None:
+                doc.entity = entity
+            if validity_date is not None:
+                from datetime import date as _date
+                doc.validity_date = _date.fromisoformat(validity_date)
         return doc
 
     async def mark_processing(self, source_path: str) -> Document | None:
