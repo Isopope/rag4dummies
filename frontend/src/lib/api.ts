@@ -243,11 +243,15 @@ export async function uploadPDF(
   parser: string,
   strategy: string,
   token: string,
+  entity?: string,
+  validityDate?: string,
 ): Promise<IngestJobResponse> {
   const fd = new FormData();
   fd.append('file', file);
   fd.append('parser', parser);
   fd.append('strategy', strategy);
+  if (entity) fd.append('entity', entity);
+  if (validityDate) fd.append('validity_date', validityDate);
   const res = await fetch(`${BASE}/ingest/pdf`, {
     method: 'POST',
     headers: { Authorization: `Bearer ${token}` },
@@ -276,6 +280,8 @@ export interface DocumentItem {
   parser: string | null;
   strategy: string | null;
   task_id: string | null;
+  entity: string | null;
+  validity_date: string | null;
   created_at: string;
   ingested_at: string | null;
   error_message: string | null;
@@ -381,6 +387,8 @@ export interface CrawlLocalRequest {
   recursive: boolean;
   parser: string;
   strategy: string;
+  entity?: string;
+  validity_date?: string;
 }
 
 export interface CrawlWebRequest {
@@ -389,6 +397,8 @@ export interface CrawlWebRequest {
   mode: 'pdf' | 'html';
   parser: string;
   strategy: string;
+  entity?: string;
+  validity_date?: string;
 }
 
 export interface CrawlSharepointRequest {
@@ -401,6 +411,8 @@ export interface CrawlSharepointRequest {
   client_id?: string;
   client_secret?: string;
   tenant_id?: string;
+  entity?: string;
+  validity_date?: string;
 }
 
 export interface CrawlJobResponse {
@@ -438,4 +450,36 @@ export async function crawlSharepoint(body: CrawlSharepointRequest, token: strin
   });
   await assertOk(res);
   return res.json();
+}
+
+// ── Entities (admin) ──────────────────────────────────────────────────────────
+
+export interface EntityItem {
+  id: string;
+  name: string;
+  created_at: string;
+}
+
+export async function listEntities(): Promise<EntityItem[]> {
+  const res = await fetch(`${BASE}/entities`);
+  await assertOk(res);
+  return res.json();
+}
+
+export async function createEntity(name: string, token: string): Promise<EntityItem> {
+  const res = await fetch(`${BASE}/entities`, {
+    method: 'POST',
+    headers: jsonHeaders(token),
+    body: JSON.stringify({ name }),
+  });
+  await assertOk(res);
+  return res.json();
+}
+
+export async function deleteEntity(id: string, token: string): Promise<void> {
+  const res = await fetch(`${BASE}/entities/${id}`, {
+    method: 'DELETE',
+    headers: jsonHeaders(token),
+  });
+  await assertOk(res);
 }

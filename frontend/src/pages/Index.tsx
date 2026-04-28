@@ -231,7 +231,7 @@ const Index = () => {
         <IngestionPage
           uploadingFiles={files}
           documents={documents}
-          onUpload={upload}
+          onUpload={(file, entity, validityDate) => upload(file, undefined, undefined, entity, validityDate)}
           onDeleteDocument={doDeleteDoc}
         />
       )}
