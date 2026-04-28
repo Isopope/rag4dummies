@@ -131,6 +131,9 @@ class WeaviateStore:
                     index_searchable=False,
                     skip_vectorization=True,
                 ),
+                # ── métadonnées métier ─────────────────────────────────────
+                Property(name="entity",        data_type=DataType.TEXT, skip_vectorization=True),
+                Property(name="validity_date", data_type=DataType.DATE, skip_vectorization=True),
             ],
         )
         logger.info("Collection {} créée.", COLLECTION_NAME)
@@ -149,6 +152,16 @@ class WeaviateStore:
                 )
             )
             logger.info("Propriété bboxes_json ajoutée à la collection {}.", COLLECTION_NAME)
+        if "entity" not in existing_props:
+            collection.config.add_property(
+                Property(name="entity", data_type=DataType.TEXT, skip_vectorization=True)
+            )
+            logger.info("Propriété entity ajoutée à la collection {}.", COLLECTION_NAME)
+        if "validity_date" not in existing_props:
+            collection.config.add_property(
+                Property(name="validity_date", data_type=DataType.DATE, skip_vectorization=True)
+            )
+            logger.info("Propriété validity_date ajoutée à la collection {}.", COLLECTION_NAME)
 
     def reset_collection(self) -> None:
         """Supprime et recrée la collection (dev / tests)."""
@@ -220,9 +233,20 @@ class WeaviateStore:
         source:
             Filtre optionnel sur le chemin absolu du document.
         """
+        from datetime import datetime, timezone
         self._ensure_connected()
         collection = self._client.collections.get(COLLECTION_NAME)
-        filters = Filter.by_property("source").equal(source) if source else None
+
+        # Exclure les documents expirés (validity_date < aujourd'hui)
+        today_rfc3339 = datetime.now(timezone.utc).strftime("%Y-%m-%dT00:00:00Z")
+        validity_filter = (
+            Filter.by_property("validity_date").is_none(True)
+            | Filter.by_property("validity_date").greater_or_equal(today_rfc3339)
+        )
+        if source:
+            filters = Filter.by_property("source").equal(source) & validity_filter
+        else:
+            filters = validity_filter
 
         result = collection.query.hybrid(
             query=query,

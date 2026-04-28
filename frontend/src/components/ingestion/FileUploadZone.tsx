@@ -1,12 +1,13 @@
-import { useRef, useCallback } from 'react';
+import { useRef, useCallback, useState } from 'react';
 import { Upload, File, CheckCircle2, Loader2, AlertCircle, Trash2 } from 'lucide-react';
 import { UploadedFile } from '@/types/chat';
 import type { DocumentItem } from '@/lib/api';
+import { useEntities } from '@/hooks/use-entities';
 
 interface FileUploadZoneProps {
   files: UploadedFile[];
   documents: DocumentItem[];
-  onUpload?: (file: File) => void;
+  onUpload?: (file: File, entity?: string, validityDate?: string) => void;
   onDelete?: (sourcePath: string) => void;
 }
 
@@ -33,15 +34,20 @@ const statusColor: Record<string, string> = {
 
 const FileUploadZone = ({ files, documents, onUpload, onDelete }: FileUploadZoneProps) => {
   const inputRef = useRef<HTMLInputElement>(null);
+  const { entities } = useEntities();
+  const [selectedEntity, setSelectedEntity] = useState('');
+  const [validityDate, setValidityDate] = useState('');
   // Lookup rapide sourcePath par id
   const docById = Object.fromEntries(documents.map((d) => [d.id, d]));
 
   const handleFiles = useCallback(
     (fileList: FileList | null) => {
       if (!fileList || !onUpload) return;
-      Array.from(fileList).forEach((f) => onUpload(f));
+      Array.from(fileList).forEach((f) =>
+        onUpload(f, selectedEntity || undefined, validityDate || undefined),
+      );
     },
-    [onUpload],
+    [onUpload, selectedEntity, validityDate],
   );
 
   const handleDrop = useCallback(
@@ -54,6 +60,32 @@ const FileUploadZone = ({ files, documents, onUpload, onDelete }: FileUploadZone
 
   return (
     <div className="space-y-4">
+      {/* Entity + validity_date */}
+      <div className="grid grid-cols-2 gap-3">
+        <div>
+          <label className="block text-xs font-medium text-muted-foreground mb-1">Entité (propriétaire)</label>
+          <select
+            value={selectedEntity}
+            onChange={(e) => setSelectedEntity(e.target.value)}
+            className="w-full px-3 py-2 text-sm border border-border rounded-lg bg-background focus:outline-none focus:ring-1 focus:ring-ring"
+          >
+            <option value="">— Aucune —</option>
+            {entities.map((e) => (
+              <option key={e.id} value={e.name}>{e.name}</option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-muted-foreground mb-1">Date d'expiration</label>
+          <input
+            type="date"
+            value={validityDate}
+            onChange={(e) => setValidityDate(e.target.value)}
+            className="w-full px-3 py-2 text-sm border border-border rounded-lg bg-background focus:outline-none focus:ring-1 focus:ring-ring"
+          />
+        </div>
+      </div>
+
       {/* Drop zone */}
       <div
         className="border-2 border-dashed border-border rounded-xl p-8 text-center hover:border-primary/40 hover:bg-muted/30 transition-all cursor-pointer"

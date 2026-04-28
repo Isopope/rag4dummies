@@ -192,6 +192,8 @@ def ingest_pdf(
     progress_cb: Callable[[str], None] | None = None,
     force_simple: bool = False,
     source_override: str | None = None,
+    entity: str | None = None,
+    validity_date: str | None = None,
 ) -> int:
     """Parse un PDF, embed ses chunks via OpenAI Embeddings et les stocke dans Weaviate.
 
@@ -250,6 +252,13 @@ def ingest_pdf(
             )
 
     _cb("Stockage dans Weaviate…")
+    # Injecter les métadonnées métier sur chaque chunk
+    # validity_date converti en RFC3339 pour Weaviate DataType.DATE
+    rfc3339_date: str | None = f"{validity_date}T00:00:00Z" if validity_date else None
+    for chunk in chunk_dicts:
+        chunk["entity"] = entity or ""
+        if rfc3339_date:
+            chunk["validity_date"] = rfc3339_date
     n = weaviate_store.insert_chunks(chunk_dicts, vectors)
     _cb(f"✅ {n} chunks indexés pour '{pdf_path.name}'.")
     return n

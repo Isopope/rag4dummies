@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { MessageSquare, Database, PanelLeftClose, PanelLeft, Moon, Sun, LogOut, UserCircle2 } from 'lucide-react';
+import { MessageSquare, Database, PanelLeftClose, PanelLeft, Moon, Sun, LogOut, UserCircle2, ShieldCheck } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/context/AuthContext';
 
@@ -69,6 +69,13 @@ const AppLayout = ({ sidebar, children, activeView, onViewChange }: AppLayoutPro
         {isAdmin && (
           <NavButton active={activeView === 'ingestion'} onClick={() => onViewChange('ingestion')} title="Ingestion">
             <Database className="w-5 h-5" />
+          </NavButton>
+        )}
+
+        {/* Admin : visible uniquement pour les administrateurs */}
+        {isAdmin && (
+          <NavButton active={false} onClick={() => navigate('/admin')} title="Administration">
+            <ShieldCheck className="w-5 h-5" />
           </NavButton>
         )}
 

@@ -123,6 +123,8 @@ class CrawlLocalRequest(BaseModel):
     recursive: bool = Field(True, description="Descendre dans les sous-répertoires")
     parser: str     = Field("docling", description="docling | mineru | simple")
     strategy: str   = Field("by_token", description="by_token | by_sentence | by_block")
+    entity: Optional[str]        = Field(None, description="Entité propriétaire (ex. 'dassault')")
+    validity_date: Optional[str] = Field(None, description="Date de validité ISO YYYY-MM-DD")
 
 
 class CrawlWebRequest(BaseModel):
@@ -131,6 +133,8 @@ class CrawlWebRequest(BaseModel):
     mode: str       = Field("pdf", description="pdf | html")
     parser: str     = Field("docling", description="docling | mineru | simple")
     strategy: str   = Field("by_token", description="by_token | by_sentence | by_block")
+    entity: Optional[str]        = Field(None, description="Entité propriétaire")
+    validity_date: Optional[str] = Field(None, description="Date de validité ISO YYYY-MM-DD")
 
 
 class CrawlSharepointRequest(BaseModel):
@@ -144,6 +148,8 @@ class CrawlSharepointRequest(BaseModel):
     client_id: Optional[str]     = Field(None, description="App Registration client_id (Entra ID)")
     client_secret: Optional[str] = Field(None, description="App Registration client_secret")
     tenant_id: Optional[str]     = Field(None, description="Tenant ID Azure AD")
+    entity: Optional[str]        = Field(None, description="Entité propriétaire")
+    validity_date: Optional[str] = Field(None, description="Date de validité ISO YYYY-MM-DD")
 
 
 class CrawlTaskItem(BaseModel):

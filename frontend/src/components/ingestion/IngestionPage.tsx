@@ -10,7 +10,7 @@ import { useConnectors, type ConnectorType, type CrawlBody } from '@/hooks/use-c
 interface IngestionPageProps {
   uploadingFiles: UploadedFile[];
   documents: DocumentItem[];
-  onUpload?: (file: File) => void;
+  onUpload?: (file: File, entity?: string, validityDate?: string) => void;
   onDeleteDocument?: (sourcePath: string) => void;
 }
 

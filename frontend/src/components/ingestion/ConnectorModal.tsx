@@ -7,6 +7,7 @@ import { useRef, useState } from 'react';
 import { X, Play, Loader2, FolderOpen, Globe, Cloud } from 'lucide-react';
 import type { ConnectorType, CrawlBody } from '@/hooks/use-connectors';
 import type { CrawlLocalRequest, CrawlSharepointRequest, CrawlWebRequest } from '@/lib/api';
+import { useEntities } from '@/hooks/use-entities';
 
 // ── Helpers UI ────────────────────────────────────────────────────────────────
 
@@ -100,6 +101,48 @@ function Checkbox({
   );
 }
 
+// ── Entity + validity_date fields (shared) ────────────────────────────────────
+
+function EntityFields({
+  entity,
+  onEntityChange,
+  validityDate,
+  onValidityDateChange,
+}: {
+  entity: string;
+  onEntityChange: (v: string) => void;
+  validityDate: string;
+  onValidityDateChange: (v: string) => void;
+}) {
+  const { entities } = useEntities();
+  return (
+    <div className="grid grid-cols-2 gap-3">
+      <div>
+        <label className="block text-xs font-medium text-muted-foreground mb-1">Entité (propriétaire)</label>
+        <select
+          value={entity}
+          onChange={(e) => onEntityChange(e.target.value)}
+          className="w-full px-3 py-2 text-sm border border-border rounded-lg bg-background focus:outline-none focus:ring-1 focus:ring-ring"
+        >
+          <option value="">— Aucune —</option>
+          {entities.map((e) => (
+            <option key={e.id} value={e.name}>{e.name}</option>
+          ))}
+        </select>
+      </div>
+      <div>
+        <label className="block text-xs font-medium text-muted-foreground mb-1">Date d'expiration</label>
+        <input
+          type="date"
+          value={validityDate}
+          onChange={(e) => onValidityDateChange(e.target.value)}
+          className="w-full px-3 py-2 text-sm border border-border rounded-lg bg-background focus:outline-none focus:ring-1 focus:ring-ring"
+        />
+      </div>
+    </div>
+  );
+}
+
 // ── Formulaire Local ──────────────────────────────────────────────────────────
 
 function LocalForm({ onSubmit, isLoading }: { onSubmit: (b: CrawlBody) => void; isLoading: boolean }) {
@@ -108,6 +151,8 @@ function LocalForm({ onSubmit, isLoading }: { onSubmit: (b: CrawlBody) => void; 
   const [recursive, setRecursive] = useState(true);
   const [parser, setParser] = useState<string>('docling');
   const [strategy, setStrategy] = useState<string>('by_token');
+  const [entity, setEntity] = useState('');
+  const [validityDate, setValidityDate] = useState('');
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -116,7 +161,15 @@ function LocalForm({ onSubmit, isLoading }: { onSubmit: (b: CrawlBody) => void; 
       .map((s) => s.trim())
       .filter(Boolean)
       .map((s) => (s.startsWith('.') ? s : `.${s}`));
-    const body: CrawlLocalRequest = { directory, ext: extList.length ? extList : ['.pdf'], recursive, parser, strategy };
+    const body: CrawlLocalRequest = {
+      directory,
+      ext: extList.length ? extList : ['.pdf'],
+      recursive,
+      parser,
+      strategy,
+      entity: entity || undefined,
+      validity_date: validityDate || undefined,
+    };
     onSubmit(body);
   };
 
@@ -142,6 +195,12 @@ function LocalForm({ onSubmit, isLoading }: { onSubmit: (b: CrawlBody) => void; 
         <Select label="Parser" value={parser} onChange={setParser} options={PARSERS} />
         <Select label="Stratégie" value={strategy} onChange={setStrategy} options={STRATEGIES} />
       </div>
+      <EntityFields
+        entity={entity}
+        onEntityChange={setEntity}
+        validityDate={validityDate}
+        onValidityDateChange={setValidityDate}
+      />
       <SubmitButton isLoading={isLoading} />
     </form>
   );
@@ -154,6 +213,8 @@ function WebForm({ onSubmit, isLoading }: { onSubmit: (b: CrawlBody) => void; is
   const [mode, setMode] = useState<'pdf' | 'html'>('pdf');
   const [parser, setParser] = useState<string>('docling');
   const [strategy, setStrategy] = useState<string>('by_token');
+  const [entity, setEntity] = useState('');
+  const [validityDate, setValidityDate] = useState('');
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -162,7 +223,14 @@ function WebForm({ onSubmit, isLoading }: { onSubmit: (b: CrawlBody) => void; is
       .map((s) => s.trim())
       .filter(Boolean);
     if (!urls.length) return;
-    const body: CrawlWebRequest = { urls, mode, parser, strategy };
+    const body: CrawlWebRequest = {
+      urls,
+      mode,
+      parser,
+      strategy,
+      entity: entity || undefined,
+      validity_date: validityDate || undefined,
+    };
     onSubmit(body);
   };
 
@@ -187,6 +255,12 @@ function WebForm({ onSubmit, isLoading }: { onSubmit: (b: CrawlBody) => void; is
         <Select label="Parser" value={parser} onChange={setParser} options={PARSERS} />
         <Select label="Stratégie" value={strategy} onChange={setStrategy} options={STRATEGIES} />
       </div>
+      <EntityFields
+        entity={entity}
+        onEntityChange={setEntity}
+        validityDate={validityDate}
+        onValidityDateChange={setValidityDate}
+      />
       <SubmitButton isLoading={isLoading} />
     </form>
   );
@@ -204,6 +278,8 @@ function SharePointForm({ onSubmit, isLoading }: { onSubmit: (b: CrawlBody) => v
   const [parser, setParser] = useState<string>('docling');
   const [strategy, setStrategy] = useState<string>('by_token');
   const [showCreds, setShowCreds] = useState(false);
+  const [entity, setEntity] = useState('');
+  const [validityDate, setValidityDate] = useState('');
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -217,6 +293,8 @@ function SharePointForm({ onSubmit, isLoading }: { onSubmit: (b: CrawlBody) => v
       client_id: clientId || undefined,
       client_secret: clientSecret || undefined,
       tenant_id: tenantId || undefined,
+      entity: entity || undefined,
+      validity_date: validityDate || undefined,
     };
     onSubmit(body);
   };
@@ -302,6 +380,13 @@ function SharePointForm({ onSubmit, isLoading }: { onSubmit: (b: CrawlBody) => v
           </div>
         )}
       </div>
+
+      <EntityFields
+        entity={entity}
+        onEntityChange={setEntity}
+        validityDate={validityDate}
+        onValidityDateChange={setValidityDate}
+      />
 
       <SubmitButton isLoading={isLoading} />
     </form>

@@ -54,6 +54,8 @@ async def ingest_pdf(
     file:     UploadFile = File(..., description="Fichier PDF à indexer"),
     parser:   str        = Form("mineru",      description="Parser : docling | mineru | simple"),
     strategy: str        = Form("by_sentence", description="Stratégie de découpage : by_token | by_sentence | by_block"),
+    entity:   str | None = Form(None,          description="Entité propriétaire (ex. 'dassault', 'thales')"),
+    validity_date: str | None = Form(None,     description="Date de validité ISO YYYY-MM-DD"),
     doc_store: DocumentStore = Depends(get_document_store),
     db=Depends(get_db_session),
     _: User = Depends(current_admin_user),  # admin uniquement
@@ -62,6 +64,10 @@ async def ingest_pdf(
         raise HTTPException(status_code=400, detail="parser doit être : docling | mineru | simple")
     if strategy not in ("by_token", "by_sentence", "by_block"):
         raise HTTPException(status_code=400, detail="strategy doit être : by_token | by_sentence | by_block")
+    if validity_date:
+        import re
+        if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", validity_date):
+            raise HTTPException(status_code=400, detail="validity_date doit être au format YYYY-MM-DD")
 
     filename = file.filename or "upload.pdf"
     _check_extension(filename, {".pdf"})
@@ -79,6 +85,7 @@ async def ingest_pdf(
     job = celery.send_task(
         "rag.tasks.ingest_pdf",
         args     = [object_key, parser, strategy, filename],
+        kwargs   = {"entity": entity, "validity_date": validity_date},
         queue    = INGEST_QUEUE,
         priority = int(RagCeleryPriority.HIGH),
     )
@@ -86,7 +93,8 @@ async def ingest_pdf(
     # 3. Enregistrer en DB (PENDING, task_id)
     from db.repositories.document import DocumentRepository
     repo = DocumentRepository(db)
-    await repo.upsert(object_key, parser=parser, strategy=strategy, task_id=job.id)
+    await repo.upsert(object_key, parser=parser, strategy=strategy, task_id=job.id,
+                      entity=entity, validity_date=validity_date)
     await db.commit()
 
     # 4. URL présignée immédiate (disponible dès l'upload)
