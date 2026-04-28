@@ -68,75 +68,96 @@ export default function PdfGroundingViewer({ url, bboxes, initialPageIdx }: PdfG
   useEffect(() => {
     if (!pdf || !canvasRef.current || !overlayRef.current) return;
 
-    let active = true;
     const canvas = canvasRef.current;
     const overlay = overlayRef.current;
     const context = canvas.getContext('2d');
     const overlayContext = overlay.getContext('2d');
     if (!context || !overlayContext) return;
 
+    let renderTask: pdfjsLib.RenderTask | null = null;
+    let cancelled = false;
+
     pdf.getPage(currentPage).then((page) => {
-      if (!active) return;
-      
+      if (cancelled) return;
+
       let currentScale = scale;
-      
+
       // Auto-fit to container on first render
       if (containerRef.current && !autoFitScale.current) {
         const viewport = page.getViewport({ scale: 1 });
-        const containerWidth = containerRef.current.clientWidth - 32; // padding
+        const containerWidth = containerRef.current.clientWidth - 32;
         if (viewport.width > 0) {
           currentScale = Math.max(0.5, Math.min(containerWidth / viewport.width, 3));
           setScale(currentScale);
         }
         autoFitScale.current = true;
       }
-      
+
       const viewport = page.getViewport({ scale: currentScale });
-      
+
       canvas.width = viewport.width;
       canvas.height = viewport.height;
       overlay.width = viewport.width;
       overlay.height = viewport.height;
-      
-      const renderContext = {
-        canvasContext: context,
-        viewport: viewport,
-      };
-      
-      const renderTask = page.render(renderContext);
-      
-      renderTask.promise.then(() => {
-        if (!active) return;
-        
-        // Clear overlay
+
+      renderTask = page.render({ canvasContext: context, viewport });
+
+      return renderTask.promise.then(() => {
+        // Draw bboxes for the current page (bbox.page is 0-indexed, currentPage is 1-indexed)
         overlayContext.clearRect(0, 0, overlay.width, overlay.height);
-        
-        // Draw bboxes for the current page
-        // Note: bbox.page is 0-indexed, currentPage is 1-indexed
+
         const pageBboxes = bboxes.filter(b => b.page === currentPage - 1);
-        
+        if (pageBboxes.length === 0) return;
+
+        // Auto-detect coordinate system (mirrors draw_chunks.py heuristic):
+        //   - Docling  → normalized [0, 1000], top-left origin
+        //   - MinerU   → PDF pts,              top-left origin
+        // Both use top-left origin, so NO PDF-space y-flip needed.
+        // viewport.convertToViewportPoint() expects PDF bottom-left coords → don't use it.
+        const isNormalized = bboxes.every(b =>
+          b.x0 <= 1001 && b.y0 <= 1001 && b.x1 <= 1001 && b.y1 <= 1001
+        );
+
         pageBboxes.forEach(bbox => {
-          const [x0, y0] = viewport.convertToViewportPoint(bbox.x0, bbox.y0);
-          const [x1, y1] = viewport.convertToViewportPoint(bbox.x1, bbox.y1);
-          
-          const rectX = Math.min(x0, x1);
-          const rectY = Math.min(y0, y1);
-          const rectW = Math.abs(x1 - x0);
-          const rectH = Math.abs(y1 - y0);
-          
-          // CSS vars from grounding implementation plan
-          overlayContext.fillStyle = 'rgba(59, 130, 246, 0.15)'; // hsl(var(--primary) with opacity)
+          let cx0: number, cy0: number, cx1: number, cy1: number;
+
+          if (isNormalized) {
+            // Docling [0, 1000] → canvas px: scale by viewport dimensions
+            cx0 = (bbox.x0 / 1000) * viewport.width;
+            cy0 = (bbox.y0 / 1000) * viewport.height;
+            cx1 = (bbox.x1 / 1000) * viewport.width;
+            cy1 = (bbox.y1 / 1000) * viewport.height;
+          } else {
+            // MinerU pts, top-left → canvas px: multiply by render scale
+            cx0 = bbox.x0 * viewport.scale;
+            cy0 = bbox.y0 * viewport.scale;
+            cx1 = bbox.x1 * viewport.scale;
+            cy1 = bbox.y1 * viewport.scale;
+          }
+
+          const rectX = Math.min(cx0, cx1);
+          const rectY = Math.min(cy0, cy1);
+          const rectW = Math.abs(cx1 - cx0);
+          const rectH = Math.abs(cy1 - cy0);
+
+          if (rectW < 1 || rectH < 1) return;
+
+          overlayContext.fillStyle = 'rgba(59, 130, 246, 0.20)';
           overlayContext.fillRect(rectX, rectY, rectW, rectH);
-          
-          overlayContext.strokeStyle = 'rgba(59, 130, 246, 0.6)';
+          overlayContext.strokeStyle = 'rgba(59, 130, 246, 0.75)';
           overlayContext.lineWidth = 2;
           overlayContext.strokeRect(rectX, rectY, rectW, rectH);
         });
       });
+    }).catch((err: { name?: string }) => {
+      if (err?.name !== 'RenderingCancelledException') {
+        console.error('PDF render error:', err);
+      }
     });
 
     return () => {
-      active = false;
+      cancelled = true;
+      renderTask?.cancel();
     };
   }, [pdf, currentPage, scale, bboxes]);
 
