@@ -14,6 +14,7 @@ from weaviate.classes.config import (
     Configure,
     DataType,
     Property,
+    Reconfigure,
     Tokenization,
     VectorDistances,
 )
@@ -78,6 +79,10 @@ class WeaviateStore:
         self._client.collections.create(
             name=COLLECTION_NAME,
             vectorizer_config=Configure.Vectorizer.none(),
+            inverted_index_config=Configure.inverted_index(
+                index_null_state=True,
+                index_property_length=True,
+            ),
             vector_index_config=Configure.VectorIndex.hnsw(
                 distance_metric=VectorDistances.COSINE
             ),
@@ -141,7 +146,18 @@ class WeaviateStore:
     def _migrate_schema(self) -> None:
         """Ajoute les propriétés manquantes à une collection existante (migration non-destructive)."""
         collection = self._client.collections.get(COLLECTION_NAME)
-        existing_props = {p.name for p in collection.config.get().properties}
+        cfg = collection.config.get()
+        # Active indexNullState si absent (collections créées avant ce patch)
+        inv = cfg.inverted_index_config
+        if not getattr(inv, "index_null_state", False):
+            collection.config.update(
+                inverted_index_config=Reconfigure.inverted_index(
+                    index_null_state=True,
+                    index_property_length=True,
+                )
+            )
+            logger.info("invertedIndexConfig mis à jour (indexNullState=true) sur {}.", COLLECTION_NAME)
+        existing_props = {p.name for p in cfg.properties}
         if "bboxes_json" not in existing_props:
             collection.config.add_property(
                 Property(
