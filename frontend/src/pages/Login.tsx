@@ -18,7 +18,7 @@ export default function Login() {
     setLoading(true);
     try {
       await login(email, password);
-      navigate('/');
+      navigate('/chat');
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Identifiants invalides');
     } finally {

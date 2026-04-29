@@ -1,7 +1,6 @@
 import { useState } from 'react';
-import { Trash2, Plus, Loader2, ShieldCheck } from 'lucide-react';
+import { Trash2, Plus, Loader2 } from 'lucide-react';
 import { useEntities } from '@/hooks/use-entities';
-import AppLayout from '@/components/layout/AppLayout';
 
 export default function Admin() {
   const { entities, isLoading, create, remove } = useEntities();
@@ -20,16 +19,6 @@ export default function Admin() {
 
   return (
     <div className="flex-1 overflow-y-auto p-8 max-w-2xl mx-auto w-full">
-      <div className="flex items-center gap-3 mb-8">
-        <div className="w-9 h-9 rounded-xl bg-primary/10 flex items-center justify-center">
-          <ShieldCheck className="w-5 h-5 text-primary" />
-        </div>
-        <div>
-          <h1 className="text-xl font-semibold text-foreground">Administration</h1>
-          <p className="text-sm text-muted-foreground">Gestion des entités (propriétaires de documents)</p>
-        </div>
-      </div>
-
       {/* Create entity form */}
       <form onSubmit={handleCreate} className="flex gap-2 mb-6">
         <input
@@ -89,18 +78,5 @@ export default function Admin() {
         )}
       </div>
     </div>
-  );
-}
-
-/** Wraps Admin with AppLayout for navigation */
-export function AdminPage() {
-  return (
-    <AppLayout
-      sidebar={null}
-      activeView="chat"
-      onViewChange={() => {}}
-    >
-      <Admin />
-    </AppLayout>
   );
 }

@@ -9,9 +9,11 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Textarea } from '@/components/ui/textarea';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { useCopyToClipboard } from '@/hooks/use-copy-to-clipboard';
+import { ChatInputModelSelect } from './ChatInputModelSelect';
 import { cn } from '@/lib/utils';
 import type { ChatMessage, MessageFeedback } from '@/types/chat';
 
@@ -19,7 +21,7 @@ interface AssistantMessageActionsProps {
   message: ChatMessage;
   className?: string;
   onFeedback?: (messageId: string, feedback: MessageFeedback) => void;
-  onRegenerate?: (messageId: string) => void;
+  onRegenerate?: (messageId: string, modelId?: string) => void;
   onShowSources?: (message: ChatMessage) => void;
 }
 
@@ -60,6 +62,59 @@ const getMessageText = (message: ChatMessage): string =>
     })
     .filter(Boolean)
     .join('\n\n');
+
+/* ── Regenerate button with inline model picker ─────────────────────── */
+const RegenerateButton = ({
+  messageId,
+  onRegenerate,
+}: {
+  messageId: string;
+  onRegenerate: (messageId: string, modelId?: string) => void;
+}) => {
+  const [open, setOpen] = useState(false);
+  const [modelId, setModelId] = useState('');
+
+  const handleModelChange = (nextModelId: string) => {
+    setModelId(nextModelId);
+    setOpen(false);
+    onRegenerate(messageId, nextModelId || undefined);
+  };
+
+  const handleOpenChange = (nextOpen: boolean) => {
+    setOpen(nextOpen);
+    if (nextOpen) setModelId('');
+  };
+
+  return (
+    <Popover open={open} onOpenChange={handleOpenChange}>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <PopoverTrigger asChild>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              aria-label="Régénérer"
+              className="h-7 w-7 text-muted-foreground hover:text-foreground transition-colors"
+            >
+              <RotateCcw className="w-3.5 h-3.5" />
+            </Button>
+          </PopoverTrigger>
+        </TooltipTrigger>
+        <TooltipContent side="bottom" className="text-xs">Régénérer</TooltipContent>
+      </Tooltip>
+      <PopoverContent align="end" className="w-64 p-3 space-y-3">
+        <p className="text-xs font-medium text-foreground">Régénérer avec</p>
+        <ChatInputModelSelect
+          value={modelId}
+          onChange={handleModelChange}
+          autoSelectDefault={false}
+          placeholder="Choisir un modele"
+        />
+      </PopoverContent>
+    </Popover>
+  );
+};
 
 /* ── Main toolbar ──────────────────────────────────────────────────── */
 export const AssistantMessageActions = ({
@@ -117,11 +172,9 @@ export const AssistantMessageActions = ({
             {isCopied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
           </ToolbarButton>
 
-          {/* Regenerate */}
+          {/* Regenerate with model picker */}
           {onRegenerate && (
-            <ToolbarButton onClick={() => onRegenerate(message.id)} label="Régénérer">
-              <RotateCcw className="w-3.5 h-3.5" />
-            </ToolbarButton>
+            <RegenerateButton messageId={message.id} onRegenerate={onRegenerate} />
           )}
 
           {/* Sources count badge */}

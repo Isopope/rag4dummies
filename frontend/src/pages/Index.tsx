@@ -1,13 +1,15 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import AppLayout from '@/components/layout/AppLayout';
 import ChatSidebar from '@/components/chat/ChatSidebar';
 import ChatArea from '@/components/chat/ChatArea';
 import ChatInput from '@/components/chat/ChatInput';
 import DocumentSidebar from '@/components/chat/DocumentSidebar';
 import IngestionPage from '@/components/ingestion/IngestionPage';
+import Admin from '@/pages/Admin';
 import type { ChatInputSubmitPayload } from '@/components/chat/ChatInput';
 import type { ChatMessage, ChatSession, MessageFeedback, MessageSource } from '@/types/chat';
+import type { AppView } from '@/types/layout';
 import { useRagQuery } from '@/hooks/use-rag-query';
 import { useSessions } from '@/hooks/use-sessions';
 import { useIngest } from '@/hooks/use-ingest';
@@ -16,53 +18,111 @@ import { getSession } from '@/lib/api';
 import { useAuth } from '@/context/AuthContext';
 import { PdfGroundingModal } from '@/components/chat/PdfGroundingModal';
 
-const CHAT_ID_PARAM = 'chat-id';
+const VIEW_PATHS: Record<AppView, string> = {
+  chat: '/chat',
+  ingestion: '/ingestion',
+  admin: '/admin',
+};
+
+function viewFromPath(pathname: string): AppView {
+  if (pathname.startsWith('/chat')) return 'chat';
+  if (pathname === '/ingestion') return 'ingestion';
+  if (pathname === '/admin') return 'admin';
+  return 'chat';
+}
 
 const Index = () => {
-  const { isAdmin, token } = useAuth();
-  const [searchParams, setSearchParams] = useSearchParams();
-  const [activeView, setActiveView] = useState<'chat' | 'ingestion'>('chat');
+  const { isAdmin, isLoading: isAuthLoading, token } = useAuth();
+  const location = useLocation();
+  const navigate = useNavigate();
+  const { conversationId } = useParams<{ conversationId?: string }>();
   const [documentSidebar, setDocumentSidebar] = useState<{
     messageId: string;
     sources: MessageSource[];
   } | null>(null);
   const [viewerSource, setViewerSource] = useState<MessageSource | null>(null);
+  const activeView = viewFromPath(location.pathname);
+  const isChatView = activeView === 'chat';
+  const loadedConversationIdRef = useRef<string | null>(null);
+  const previousConversationIdRef = useRef<string | undefined>(conversationId);
+  const previousTokenRef = useRef<string | null>(token);
 
-  const { messages, isStreaming, conversationTitle, sessionId, sendMessage, sendFeedback, clearMessages, loadSession } =
+  const { messages, isStreaming, conversationTitle, sessionId, sendMessage, stopGenerating, regenerateMessage, sendFeedback, clearMessages, loadSession } =
     useRagQuery();
   const { sessions, deleteSession: doDelete, renameSession: doRename, refresh: refreshSessions } = useSessions();
   const { files, upload } = useIngest();
   const { documents, deleteDocument: doDeleteDoc } = useDocuments();
 
-  // -- URL → state : charger la session indiquée dans l'URL au montage (ou au changement de param) --
-  const initialLoadDone = useRef(false);
   useEffect(() => {
-    const urlChatId = searchParams.get(CHAT_ID_PARAM);
-    if (!urlChatId) return;
-    // Évite de recharger si la session est déjà active
-    if (urlChatId === sessionId) return;
-    // Évite le double-chargement au montage strict-mode
-    if (initialLoadDone.current) return;
-    initialLoadDone.current = true;
+    if (isAuthLoading) return;
+    if ((activeView === 'ingestion' || activeView === 'admin') && !isAdmin) {
+      navigate(VIEW_PATHS.chat, { replace: true });
+    }
+  }, [activeView, isAdmin, isAuthLoading, navigate]);
 
-    getSession(urlChatId, token!)
-      .then((detail) => loadSession(detail))
+  useEffect(() => {
+    const previousToken = previousTokenRef.current;
+    previousTokenRef.current = token;
+
+    if (isAuthLoading) return;
+
+    const hasLoggedOut = !!previousToken && !token;
+    const hasProtectedConversationUrl = !token && !!conversationId;
+
+    if (!hasLoggedOut && !hasProtectedConversationUrl) return;
+
+    clearMessages();
+    setDocumentSidebar(null);
+    setViewerSource(null);
+    loadedConversationIdRef.current = null;
+    previousConversationIdRef.current = undefined;
+
+    if (location.pathname !== VIEW_PATHS.chat || conversationId) {
+      navigate(VIEW_PATHS.chat, { replace: true });
+    }
+  }, [clearMessages, conversationId, isAuthLoading, location.pathname, navigate, token]);
+
+  // -- route → state : charger la conversation indiquée dans l'URL --
+  useEffect(() => {
+    if (!isChatView) return;
+    const previousConversationId = previousConversationIdRef.current;
+    previousConversationIdRef.current = conversationId;
+
+    if (!conversationId) {
+      loadedConversationIdRef.current = null;
+      if (previousConversationId) clearMessages();
+      return;
+    }
+    if (!token) return;
+    if (loadedConversationIdRef.current === conversationId) return;
+
+    loadedConversationIdRef.current = conversationId;
+    let cancelled = false;
+
+    getSession(conversationId, token)
+      .then((detail) => {
+        if (cancelled) return;
+        loadSession(detail);
+      })
       .catch(() => {
-        // Session invalide ou supprimée → nettoyer l'URL
-        setSearchParams((prev) => {
-          prev.delete(CHAT_ID_PARAM);
-          return prev;
-        }, { replace: true });
+        if (cancelled) return;
+        loadedConversationIdRef.current = null;
+        clearMessages();
+        navigate(VIEW_PATHS.chat, { replace: true });
       });
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); // intentionnellement déclenché uniquement au montage
 
-  // -- state → URL : synchroniser l'URL quand sessionId est assigné ou change --
+    return () => {
+      cancelled = true;
+    };
+  }, [clearMessages, conversationId, isChatView, loadSession, navigate, token]);
+
+  // -- state → route : donner une vraie URL à une nouvelle conversation --
   useEffect(() => {
+    if (!isChatView) return;
+    if (conversationId) return;
     if (!sessionId) return;
-    if (searchParams.get(CHAT_ID_PARAM) === sessionId) return;
-    setSearchParams({ [CHAT_ID_PARAM]: sessionId }, { replace: true });
-  }, [sessionId, searchParams, setSearchParams]);
+    navigate(`${VIEW_PATHS.chat}/${sessionId}`, { replace: true });
+  }, [conversationId, isChatView, navigate, sessionId]);
 
   // -- Auto-naming : rafraîchir la liste dès que le LLM a généré un titre --
   // Le titre est déjà persisté en DB (via append_turn dans query.py) quand cet effet se déclenche.
@@ -73,7 +133,7 @@ const Index = () => {
   }, [conversationTitle]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ID de la session active
-  const activeSessionId = sessionId ?? null;
+  const activeSessionId = conversationId ?? sessionId ?? null;
 
   // Sessions formatées pour ChatSidebar (type ChatSession)
   const displayedSessions: ChatSession[] = sessions.map((s) => ({
@@ -107,15 +167,10 @@ const Index = () => {
   );
 
   const handleRegenerate = useCallback(
-    (messageId: string) => {
-      const idx = messages.findIndex((m) => m.id === messageId);
-      if (idx <= 0) return;
-      const questionMsg = messages[idx - 1];
-      if (questionMsg.role !== 'user') return;
-      const text = questionMsg.contents.find((c) => c.type === 'text')?.text;
-      if (text) sendMessage(text);
+    (messageId: string, modelId?: string) => {
+      regenerateMessage(messageId, modelId);
     },
-    [messages, sendMessage],
+    [regenerateMessage],
   );
 
   const handleShowSources = useCallback((message: ChatMessage) => {
@@ -126,33 +181,19 @@ const Index = () => {
   const handleNewSession = useCallback(() => {
     clearMessages();
     setDocumentSidebar(null);
-    // Supprime le param URL → nouvelle conversation sans identifiant
-    setSearchParams((prev) => {
-      prev.delete(CHAT_ID_PARAM);
-      return prev;
-    }, { replace: true });
-    initialLoadDone.current = false;
-  }, [clearMessages, setSearchParams]);
+    loadedConversationIdRef.current = null;
+    navigate(VIEW_PATHS.chat, { replace: true });
+  }, [clearMessages, navigate]);
 
   const handleSelectSession = useCallback(
-    async (id: string) => {
+    (id: string) => {
       if (id === activeSessionId) return;
-      try {
-        const detail = await getSession(id, token!);
-        loadSession(detail);
-        setDocumentSidebar(null);
-        refreshSessions();
-        // L'URL sera mise à jour via le useEffect ci-dessus quand sessionId change
-      } catch {
-        clearMessages();
-        setDocumentSidebar(null);
-        setSearchParams((prev) => {
-          prev.delete(CHAT_ID_PARAM);
-          return prev;
-        }, { replace: true });
-      }
+      clearMessages();
+      setDocumentSidebar(null);
+      loadedConversationIdRef.current = null;
+      navigate(`${VIEW_PATHS.chat}/${id}`);
     },
-    [activeSessionId, clearMessages, loadSession, refreshSessions, setSearchParams],
+    [activeSessionId, clearMessages, navigate],
   );
 
   const handleDeleteSession = useCallback(
@@ -161,13 +202,11 @@ const Index = () => {
       if (id === activeSessionId) {
         clearMessages();
         setDocumentSidebar(null);
-        setSearchParams((prev) => {
-          prev.delete(CHAT_ID_PARAM);
-          return prev;
-        }, { replace: true });
+        loadedConversationIdRef.current = null;
+        navigate(VIEW_PATHS.chat, { replace: true });
       }
     },
-    [activeSessionId, clearMessages, doDelete, setSearchParams],
+    [activeSessionId, clearMessages, doDelete, navigate],
   );
 
   const handleRenameSession = useCallback(
@@ -181,9 +220,10 @@ const Index = () => {
     <AppLayout
       activeView={activeView}
       onViewChange={(view) => {
-        // Seuls les admins peuvent accéder à la vue ingestion
-        if (view === 'ingestion' && !isAdmin) return;
-        setActiveView(view);
+        if ((view === 'ingestion' || view === 'admin') && !isAdmin) return;
+        const pathname = view === 'chat' && sessionId ? `${VIEW_PATHS.chat}/${sessionId}` : VIEW_PATHS[view];
+        if (pathname === location.pathname) return;
+        navigate(pathname);
       }}
       sidebar={
         <ChatSidebar
@@ -212,6 +252,7 @@ const Index = () => {
               onSend={handleSend}
               disabled={false}
               isStreaming={isStreaming}
+              onStopGenerating={stopGenerating}
             />
           </div>
 
@@ -227,13 +268,15 @@ const Index = () => {
             </div>
           )}
         </div>
-      ) : (
+      ) : activeView === 'ingestion' ? (
         <IngestionPage
           uploadingFiles={files}
           documents={documents}
           onUpload={(file, entity, validityDate) => upload(file, undefined, undefined, entity, validityDate)}
           onDeleteDocument={doDeleteDoc}
         />
+      ) : (
+        <Admin />
       )}
       
       <PdfGroundingModal 

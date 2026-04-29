@@ -14,6 +14,34 @@ from fastapi.middleware.cors import CORSMiddleware
 from loguru import logger
 
 load_dotenv()
+async def _ensure_admin(email: str, password: str) -> None:
+    """Crée un utilisateur admin au premier démarrage s'il n'existe pas encore."""
+    from fastapi_users.password import PasswordHelper
+    from sqlalchemy import select
+    from db.engine import get_session_factory
+    from db.models.user import User
+    import uuid
+
+    factory = get_session_factory()
+    async with factory() as session:
+        result = await session.execute(select(User).where(User.email == email))
+        if result.scalar_one_or_none() is not None:
+            return  # déjà créé
+
+        pw_helper = PasswordHelper()
+        hashed = pw_helper.hash(password)
+        admin = User(
+            id=uuid.uuid4(),
+            email=email,
+            hashed_password=hashed,
+            is_active=True,
+            is_superuser=False,
+            is_verified=True,
+            role="admin",
+        )
+        session.add(admin)
+        await session.commit()
+        logger.info("Utilisateur admin créé : {}", email)
 
 
 @asynccontextmanager
@@ -37,6 +65,14 @@ async def lifespan(app: FastAPI):
             logger.info("Tables SQLite créées / vérifiées.")
         except Exception as exc:
             logger.warning("Impossible de créer les tables SQLite : {}", exc)
+    
+    # Crée l'admin par défaut au premier démarrage (si absent de la DB)
+    admin_email    = os.getenv("ADMIN_EMAIL",    "admin@example.com")
+    admin_password = os.getenv("ADMIN_PASSWORD", "changeme")
+    try:
+        await _ensure_admin(admin_email, admin_password)
+    except Exception as exc:
+        logger.warning("Impossible de créer l'admin : {}", exc)
 
     yield
 

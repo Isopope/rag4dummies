@@ -145,6 +145,8 @@ def crawl_local_task(
     recursive: bool  = True,
     parser: str      = "docling",
     strategy: str    = "by_token",
+    entity: str | None   = None,
+    validity_date: str | None = None,
 ) -> dict[str, Any]:
     """
     Scanne un répertoire local et dispatche l'ingestion des fichiers nouveaux.
@@ -201,6 +203,8 @@ def crawl_web_task(
     mode: str        = "pdf",
     parser: str      = "docling",
     strategy: str    = "by_token",
+    entity: str | None    = None,
+    validity_date: str | None = None,
 ) -> dict[str, Any]:
     """
     Récupère des pages web via Playwright (rendu → PDF) et dispatche l'ingestion.
@@ -259,6 +263,8 @@ def crawl_sharepoint_task(
     output_dir: str         = "./tmp/sharepoint_fetch",
     parser: str             = "docling",
     strategy: str           = "by_token",
+    entity: str | None      = None,
+    validity_date: str | None = None,
     # Credentials — priorité : paramètre > variable d'environnement
     client_id: str     | None = None,
     client_secret: str | None = None,

@@ -1,3 +1,4 @@
+import type { ChunkModel } from '@/lib/api';
 import type { CellValue } from '@/lib/table-utils';
 
 export type MessageContentType = 'text' | 'image' | 'chart' | 'json' | 'code' | 'file' | 'table';
@@ -45,6 +46,16 @@ export interface MessageFeedback {
   explanation?: string;
 }
 
+export interface MessageFeedbackContext {
+  question: string;
+  answer: string;
+  questionId?: string;
+  title?: string;
+  sources?: ChunkModel[];
+  followUps?: string[];
+  nRetrieved?: number;
+}
+
 export interface MessageSource {
   id: string;
   title: string;
@@ -80,6 +91,8 @@ export interface ChatMessage {
   attachedImages?: AttachedImage[];
   /** Agent processing steps (populated from SSE node_update events) */
   steps?: AgentStep[];
+  /** Internal metadata used to send accurate feedback for this response. */
+  feedbackContext?: MessageFeedbackContext;
 }
 
 export interface ChatSession {

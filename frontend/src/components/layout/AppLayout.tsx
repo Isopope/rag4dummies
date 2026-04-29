@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
+import type { AppView } from '@/types/layout';
 import { MessageSquare, Database, PanelLeftClose, PanelLeft, Moon, Sun, LogOut, UserCircle2, ShieldCheck } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/context/AuthContext';
@@ -7,8 +8,8 @@ import { useAuth } from '@/context/AuthContext';
 interface AppLayoutProps {
   sidebar: React.ReactNode;
   children: React.ReactNode;
-  activeView: 'chat' | 'ingestion';
-  onViewChange: (view: 'chat' | 'ingestion') => void;
+  activeView: AppView;
+  onViewChange: (view: AppView) => void;
 }
 
 const AppLayout = ({ sidebar, children, activeView, onViewChange }: AppLayoutProps) => {
@@ -74,7 +75,7 @@ const AppLayout = ({ sidebar, children, activeView, onViewChange }: AppLayoutPro
 
         {/* Admin : visible uniquement pour les administrateurs */}
         {isAdmin && (
-          <NavButton active={false} onClick={() => navigate('/admin')} title="Administration">
+          <NavButton active={activeView === 'admin'} onClick={() => onViewChange('admin')} title="Administration">
             <ShieldCheck className="w-5 h-5" />
           </NavButton>
         )}
@@ -112,7 +113,7 @@ const AppLayout = ({ sidebar, children, activeView, onViewChange }: AppLayoutPro
             </div>
             {/* Bouton déconnexion */}
             <button
-              onClick={() => { logout(); navigate('/'); }}
+              onClick={() => { logout(); navigate('/chat', { replace: true }); }}
               className="w-10 h-9 rounded-xl flex items-center justify-center text-sidebar-foreground hover:bg-red-500/15 hover:text-red-400 transition-colors"
               title="Se déconnecter"
             >
@@ -131,7 +132,7 @@ const AppLayout = ({ sidebar, children, activeView, onViewChange }: AppLayoutPro
         )}
       </div>
 
-      {/* ── Sidebar ────────────────────────────────────────────── */}
+      {/* ── Sidebar : uniquement en vue chat ──────────────────── */}
       {activeView === 'chat' && (
         <div
           className={cn(
@@ -162,6 +163,34 @@ const AppLayout = ({ sidebar, children, activeView, onViewChange }: AppLayoutPro
             </Link>
           </div>
         )}
+
+        {activeView === 'admin' && (
+          <div className="shrink-0 border-b border-border bg-background/95 backdrop-blur-sm">
+            <div className="flex items-center justify-between px-6 py-4">
+              <div className="min-w-0">
+                <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-muted-foreground">
+                  Espace de travail / Administration
+                </p>
+                <div className="mt-2 flex items-center gap-3">
+                  <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 text-primary">
+                    <ShieldCheck className="w-5 h-5" />
+                  </div>
+                  <div className="min-w-0">
+                    <h1 className="text-base font-semibold text-foreground">Administration</h1>
+                    <p className="text-sm text-muted-foreground">
+                      Gestion des entites et des parametres metier.
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="hidden md:flex items-center rounded-full border border-border bg-muted/40 px-3 py-1.5 text-xs font-medium text-muted-foreground">
+                Vue admin active
+              </div>
+            </div>
+          </div>
+        )}
+
         {children}
       </div>
     </div>

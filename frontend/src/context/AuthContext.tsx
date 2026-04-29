@@ -1,6 +1,7 @@
 import { createContext, useContext, useState, useCallback, useEffect, type ReactNode } from 'react';
 import { login as apiLogin, getMe, type UserInfo } from '@/lib/api';
 import { getToken, setToken, clearToken } from '@/lib/auth';
+import { clearPrivateQueryData } from '@/lib/query-client';
 
 interface AuthContextValue {
   token: string | null;
@@ -28,6 +29,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       .catch(() => {
         // Token expiré ou invalide → déconnecter silencieusement
         clearToken();
+        clearPrivateQueryData();
         setTokenState(null);
         setUser(null);
       })
@@ -44,6 +46,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const logout = useCallback(() => {
     clearToken();
+    clearPrivateQueryData();
     setTokenState(null);
     setUser(null);
   }, []);

@@ -26,9 +26,16 @@ function providerMeta(provider: string) {
 interface ChatInputModelSelectProps {
   value: string;
   onChange: (id: string) => void;
+  autoSelectDefault?: boolean;
+  placeholder?: string;
 }
 
-export function ChatInputModelSelect({ value, onChange }: ChatInputModelSelectProps) {
+export function ChatInputModelSelect({
+  value,
+  onChange,
+  autoSelectDefault = true,
+  placeholder,
+}: ChatInputModelSelectProps) {
   const [models, setModels] = useState<ModelInfo[]>([]);
   const [defaultModel, setDefaultModel] = useState('');
 
@@ -36,11 +43,11 @@ export function ChatInputModelSelect({ value, onChange }: ChatInputModelSelectPr
     getModels()
       .then(({ models: list, default: def }) => {
         setModels(list);
-        if (!value && def) onChange(def);
+        if (autoSelectDefault && !value && def) onChange(def);
         setDefaultModel(def);
       })
       .catch(() => {/* silencieux si API indisponible */});
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [autoSelectDefault, onChange, value]);
 
   // Groupe par provider
   const grouped = models.reduce<Record<string, ModelInfo[]>>((acc, m) => {
@@ -48,7 +55,7 @@ export function ChatInputModelSelect({ value, onChange }: ChatInputModelSelectPr
     return acc;
   }, {});
 
-  const currentId = value || defaultModel;
+  const currentId = value || (autoSelectDefault ? defaultModel : '');
   const current = models.find((m) => m.id === currentId);
   const { Icon: CurrentIcon } = providerMeta(current?.provider ?? '');
 
@@ -57,8 +64,10 @@ export function ChatInputModelSelect({ value, onChange }: ChatInputModelSelectPr
   return (
     <Select value={currentId} onValueChange={onChange}>
       <SelectTrigger className="h-7 w-auto gap-1.5 border-none bg-transparent px-2 text-xs text-muted-foreground hover:text-foreground hover:bg-muted focus:ring-0 focus:ring-offset-0 [&>svg]:size-3">
-        <CurrentIcon className="size-3 shrink-0" />
-        <SelectValue>{current?.label ?? currentId}</SelectValue>
+        {current ? <CurrentIcon className="size-3 shrink-0" /> : <Zap className="size-3 shrink-0" />}
+        <SelectValue placeholder={placeholder ?? 'Choisir un modele'}>
+          {current?.label ?? currentId}
+        </SelectValue>
       </SelectTrigger>
       <SelectContent align="end" className="max-h-72">
         {Object.entries(grouped).map(([provider, items]) => {

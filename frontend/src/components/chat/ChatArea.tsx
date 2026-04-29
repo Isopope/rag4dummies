@@ -12,7 +12,7 @@ interface ChatAreaProps {
   isTyping?: boolean;
   onSelectSuggestion?: (suggestion: string) => void;
   onFeedback?: (messageId: string, feedback: MessageFeedback) => void;
-  onRegenerate?: (messageId: string) => void;
+  onRegenerate?: (messageId: string, modelId?: string) => void;
   onShowSources?: (message: ChatMessage) => void;
 }
 
@@ -102,7 +102,7 @@ const AssistantMessage = ({
 }: {
   msg: ChatMessage;
   onFeedback?: (id: string, fb: MessageFeedback) => void;
-  onRegenerate?: (id: string) => void;
+  onRegenerate?: (id: string, modelId?: string) => void;
   onShowSources?: (msg: ChatMessage) => void;
   onSelectSuggestion?: (s: string) => void;
 }) => (
@@ -172,6 +172,12 @@ const ChatArea = ({
   const containerRef = useRef<HTMLDivElement>(null);
   const greeting = useMemo(getGreeting, []);
   const [showScrollBtn, setShowScrollBtn] = useState(false);
+  const latestAssistantMessageId = useMemo(() => {
+    for (let index = messages.length - 1; index >= 0; index -= 1) {
+      if (messages[index].role === 'assistant') return messages[index].id;
+    }
+    return null;
+  }, [messages]);
 
   const scrollToBottom = useCallback(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -214,7 +220,7 @@ const ChatArea = ({
                 key={msg.id}
                 msg={msg}
                 onFeedback={onFeedback}
-                onRegenerate={onRegenerate}
+                onRegenerate={msg.id === latestAssistantMessageId ? onRegenerate : undefined}
                 onShowSources={onShowSources}
                 onSelectSuggestion={onSelectSuggestion}
               />
