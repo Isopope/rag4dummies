@@ -5,7 +5,7 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
-from sqlalchemy import select
+from sqlalchemy import case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..models.document import Document, DocumentStatus
@@ -122,6 +122,33 @@ class DocumentRepository:
             stmt = stmt.where(Document.status == status)
         result = await self._session.execute(stmt)
         return list(result.scalars().all())
+
+    async def count_all(self, status: str | None = None) -> int:
+        stmt = select(func.count()).select_from(Document)
+        if status is not None:
+            stmt = stmt.where(Document.status == status)
+        result = await self._session.execute(stmt)
+        return int(result.scalar_one() or 0)
+
+    async def get_global_stats(self) -> dict[str, int]:
+        result = await self._session.execute(
+            select(
+                func.count().label("total_documents"),
+                func.sum(Document.chunk_count).label("total_chunks"),
+                func.sum(
+                    case(
+                        (Document.status == DocumentStatus.INDEXED, 1),
+                        else_=0,
+                    )
+                ).label("indexed_documents"),
+            )
+        )
+        row = result.one()
+        return {
+            "total_documents": int(row.total_documents or 0),
+            "total_chunks": int(row.total_chunks or 0),
+            "indexed_documents": int(row.indexed_documents or 0),
+        }
 
     # ── Suppression ────────────────────────────────────────────────────────────
 

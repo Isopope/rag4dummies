@@ -35,16 +35,32 @@ class DocumentItemResponse(BaseModel):
     parser: Optional[str]
     strategy: Optional[str]
     task_id: Optional[str]
+    entity: Optional[str]
+    validity_date: Optional[str]
     created_at: str
     ingested_at: Optional[str]
     error_message: Optional[str]
+
+
+class DocumentListStatsResponse(BaseModel):
+    total_documents: int
+    indexed_documents: int
+    total_chunks: int
+
+
+class PaginatedDocumentsResponse(BaseModel):
+    items: list[DocumentItemResponse]
+    total: int
+    limit: int
+    offset: int
+    stats: DocumentListStatsResponse
 
 
 # ── GET /documents — liste ─────────────────────────────────────────────────────
 
 @router.get(
     "",
-    response_model=list[DocumentItemResponse],
+    response_model=PaginatedDocumentsResponse,
     summary="Lister les documents ingérés",
     description="Retourne la liste des documents suivis en base, avec leur statut d'ingestion.",
 )
@@ -54,11 +70,14 @@ async def list_documents(
     offset: int = Query(0, ge=0),
     db: AsyncSession = Depends(get_db_session),
     _: User = Depends(current_admin_user),
-) -> list[DocumentItemResponse]:
+) -> PaginatedDocumentsResponse:
     from db.repositories.document import DocumentRepository
     repo = DocumentRepository(db)
     docs = await repo.list_all(status=status_filter, limit=limit, offset=offset)
-    return [
+    total = await repo.count_all(status=status_filter)
+    stats = await repo.get_global_stats()
+
+    items = [
         DocumentItemResponse(
             id           = str(doc.id),
             filename     = doc.filename,
@@ -68,12 +87,21 @@ async def list_documents(
             parser       = doc.parser,
             strategy     = doc.strategy,
             task_id      = doc.task_id,
+            entity       = doc.entity,
+            validity_date = doc.validity_date.isoformat() if doc.validity_date else None,
             created_at   = doc.created_at.isoformat(),
             ingested_at  = doc.ingested_at.isoformat() if doc.ingested_at else None,
             error_message = doc.error_message,
         )
         for doc in docs
     ]
+    return PaginatedDocumentsResponse(
+        items=items,
+        total=total,
+        limit=limit,
+        offset=offset,
+        stats=DocumentListStatsResponse(**stats),
+    )
 
 
 # ── DELETE /documents/{object_key} ────────────────────────────────────────────
