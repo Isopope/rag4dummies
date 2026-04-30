@@ -1,17 +1,26 @@
-import { useRef, useCallback, useState } from 'react';
-import { Upload, File, CheckCircle2, Loader2, AlertCircle, Trash2 } from 'lucide-react';
-import { UploadedFile } from '@/types/chat';
+import { useRef, useCallback, useState, type DragEvent } from 'react';
+import { Upload, File, CheckCircle2, Loader2, AlertCircle, Trash2, type LucideIcon } from 'lucide-react';
+import type { UploadedFile } from '@/types/chat';
 import type { DocumentItem } from '@/lib/api';
 import { useEntities } from '@/hooks/use-entities';
+import { TablePagination } from '@/components/ui/table-pagination';
 
 interface FileUploadZoneProps {
-  files: UploadedFile[];
+  uploadingFiles: UploadedFile[];
+  recentFiles: UploadedFile[];
   documents: DocumentItem[];
+  totalDocuments: number;
+  pageIndex: number;
+  pageCount: number;
+  pageSize: number;
+  isFetching?: boolean;
+  onPageChange: (pageIndex: number) => void;
+  onPageSizeChange: (pageSize: number) => void;
   onUpload?: (file: File, entity?: string, validityDate?: string) => void;
   onDelete?: (sourcePath: string) => void;
 }
 
-const statusIcon: Record<string, React.FC<{ className?: string }>> = {
+const statusIcon: Record<string, LucideIcon> = {
   indexed: CheckCircle2,
   processing: Loader2,
   uploading: Loader2,
@@ -19,7 +28,7 @@ const statusIcon: Record<string, React.FC<{ className?: string }>> = {
 };
 
 const statusLabel: Record<string, string> = {
-  indexed: 'Indexé',
+  indexed: 'Indexe',
   processing: 'Traitement...',
   uploading: 'Upload...',
   error: 'Erreur',
@@ -32,26 +41,90 @@ const statusColor: Record<string, string> = {
   error: 'text-destructive',
 };
 
-const FileUploadZone = ({ files, documents, onUpload, onDelete }: FileUploadZoneProps) => {
+function FileRow({
+  file,
+  sourcePath,
+  errorMessage,
+  onDelete,
+}: {
+  file: UploadedFile;
+  sourcePath?: string;
+  errorMessage?: string | null;
+  onDelete?: (sourcePath: string) => void;
+}) {
+  const Icon = statusIcon[file.status];
+
+  return (
+    <div className="flex items-center gap-3 rounded-lg border border-border bg-card p-3">
+      <File className="h-8 w-8 shrink-0 text-primary/60" />
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-sm font-medium text-card-foreground">{file.name}</p>
+        <div className="mt-0.5 flex items-center gap-2">
+          <span className="text-[11px] text-muted-foreground">{file.size}</span>
+          {errorMessage && (
+            <span className="max-w-[200px] truncate text-[11px] text-destructive" title={errorMessage}>
+              {errorMessage}
+            </span>
+          )}
+          {file.progress !== undefined && file.status !== 'indexed' && (
+            <div className="h-1.5 max-w-[120px] flex-1 overflow-hidden rounded-full bg-muted">
+              <div
+                className="h-full rounded-full bg-primary transition-all"
+                style={{ width: `${file.progress}%` }}
+              />
+            </div>
+          )}
+        </div>
+      </div>
+      <div className={`flex shrink-0 items-center gap-1.5 text-xs font-medium ${statusColor[file.status]}`}>
+        <Icon className={`h-3.5 w-3.5 ${file.status === 'processing' || file.status === 'uploading' ? 'animate-spin' : ''}`} />
+        {statusLabel[file.status]}
+      </div>
+      {onDelete && sourcePath && (
+        <button
+          onClick={() => onDelete(sourcePath)}
+          className="ml-1 rounded p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-destructive"
+          title="Supprimer"
+        >
+          <Trash2 className="h-3.5 w-3.5" />
+        </button>
+      )}
+    </div>
+  );
+}
+
+const FileUploadZone = ({
+  uploadingFiles,
+  recentFiles,
+  documents,
+  totalDocuments,
+  pageIndex,
+  pageCount,
+  pageSize,
+  isFetching,
+  onPageChange,
+  onPageSizeChange,
+  onUpload,
+  onDelete,
+}: FileUploadZoneProps) => {
   const inputRef = useRef<HTMLInputElement>(null);
   const { entities } = useEntities();
   const [selectedEntity, setSelectedEntity] = useState('');
   const [validityDate, setValidityDate] = useState('');
-  // Lookup rapide sourcePath par id
-  const docById = Object.fromEntries(documents.map((d) => [d.id, d]));
+  const docById = Object.fromEntries(documents.map((document) => [document.id, document]));
 
   const handleFiles = useCallback(
     (fileList: FileList | null) => {
       if (!fileList || !onUpload) return;
-      Array.from(fileList).forEach((f) =>
-        onUpload(f, selectedEntity || undefined, validityDate || undefined),
+      Array.from(fileList).forEach((file) =>
+        onUpload(file, selectedEntity || undefined, validityDate || undefined),
       );
     },
     [onUpload, selectedEntity, validityDate],
   );
 
   const handleDrop = useCallback(
-    (e: React.DragEvent) => {
+    (e: DragEvent) => {
       e.preventDefault();
       handleFiles(e.dataTransfer.files);
     },
@@ -60,46 +133,47 @@ const FileUploadZone = ({ files, documents, onUpload, onDelete }: FileUploadZone
 
   return (
     <div className="space-y-4">
-      {/* Entity + validity_date */}
       <div className="grid grid-cols-2 gap-3">
         <div>
-          <label className="block text-xs font-medium text-muted-foreground mb-1">Entité (propriétaire)</label>
+          <label className="mb-1 block text-xs font-medium text-muted-foreground">Entite (proprietaire)</label>
           <select
             value={selectedEntity}
             onChange={(e) => setSelectedEntity(e.target.value)}
-            className="w-full px-3 py-2 text-sm border border-border rounded-lg bg-background focus:outline-none focus:ring-1 focus:ring-ring"
+            className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-ring"
           >
-            <option value="">— Aucune —</option>
-            {entities.map((e) => (
-              <option key={e.id} value={e.name}>{e.name}</option>
+            <option value="">- Aucune -</option>
+            {entities.map((entity) => (
+              <option key={entity.id} value={entity.name}>{entity.name}</option>
             ))}
           </select>
         </div>
         <div>
-          <label className="block text-xs font-medium text-muted-foreground mb-1">Date d'expiration</label>
+          <label className="mb-1 block text-xs font-medium text-muted-foreground">Date d&apos;expiration</label>
           <input
             type="date"
             value={validityDate}
             onChange={(e) => setValidityDate(e.target.value)}
-            className="w-full px-3 py-2 text-sm border border-border rounded-lg bg-background focus:outline-none focus:ring-1 focus:ring-ring"
+            className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-ring"
           />
         </div>
       </div>
 
-      {/* Drop zone */}
       <div
-        className="border-2 border-dashed border-border rounded-xl p-8 text-center hover:border-primary/40 hover:bg-muted/30 transition-all cursor-pointer"
+        className="cursor-pointer rounded-xl border-2 border-dashed border-border p-8 text-center transition-all hover:border-primary/40 hover:bg-muted/30"
         onClick={() => inputRef.current?.click()}
         onDrop={handleDrop}
         onDragOver={(e) => e.preventDefault()}
       >
-        <Upload className="w-8 h-8 text-muted-foreground mx-auto mb-3" />
-        <p className="text-sm font-medium text-foreground mb-1">Déposez vos fichiers ici</p>
-        <p className="text-xs text-muted-foreground">PDF — jusqu'à 100 MB</p>
+        <Upload className="mx-auto mb-3 h-8 w-8 text-muted-foreground" />
+        <p className="mb-1 text-sm font-medium text-foreground">Deposez vos fichiers ici</p>
+        <p className="text-xs text-muted-foreground">PDF - jusqu&apos;a 100 MB</p>
         <button
           type="button"
-          className="mt-4 px-4 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:opacity-90 transition-opacity"
-          onClick={(e) => { e.stopPropagation(); inputRef.current?.click(); }}
+          className="mt-4 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-opacity hover:opacity-90"
+          onClick={(e) => {
+            e.stopPropagation();
+            inputRef.current?.click();
+          }}
         >
           Parcourir les fichiers
         </button>
@@ -113,51 +187,56 @@ const FileUploadZone = ({ files, documents, onUpload, onDelete }: FileUploadZone
         />
       </div>
 
-      {/* File list */}
-      {files.length > 0 && (
+      {uploadingFiles.length > 0 && (
         <div className="space-y-2">
-          <h3 className="text-sm font-semibold text-foreground">Fichiers récents</h3>
-          {files.map((file) => {
-            const Icon = statusIcon[file.status];
-            const doc = docById[file.id];
-            return (
-              <div key={file.id} className="flex items-center gap-3 p-3 rounded-lg border border-border bg-card">
-                <File className="w-8 h-8 text-primary/60 shrink-0" />
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium text-card-foreground truncate">{file.name}</p>
-                  <div className="flex items-center gap-2 mt-0.5">
-                    <span className="text-[11px] text-muted-foreground">{file.size}</span>
-                    {doc?.error_message && (
-                      <span className="text-[11px] text-destructive truncate max-w-[200px]" title={doc.error_message}>
-                        {doc.error_message}
-                      </span>
-                    )}
-                    {file.progress !== undefined && file.status !== 'indexed' && (
-                      <div className="flex-1 max-w-[120px] h-1.5 bg-muted rounded-full overflow-hidden">
-                        <div
-                          className="h-full bg-primary rounded-full transition-all"
-                          style={{ width: `${file.progress}%` }}
-                        />
-                      </div>
-                    )}
-                  </div>
-                </div>
-                <div className={`flex items-center gap-1.5 text-xs font-medium shrink-0 ${statusColor[file.status]}`}>
-                  <Icon className={`w-3.5 h-3.5 ${file.status === 'processing' || file.status === 'uploading' ? 'animate-spin' : ''}`} />
-                  {statusLabel[file.status]}
-                </div>
-                {onDelete && doc && (
-                  <button
-                    onClick={() => onDelete(doc.source_path)}
-                    className="ml-1 p-1 rounded hover:bg-muted text-muted-foreground hover:text-destructive transition-colors"
-                    title="Supprimer"
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                  </button>
-                )}
-              </div>
-            );
-          })}
+          <h3 className="text-sm font-semibold text-foreground">Televersements en cours</h3>
+          {uploadingFiles.map((file) => (
+            <FileRow key={file.id} file={file} />
+          ))}
+        </div>
+      )}
+
+      {(recentFiles.length > 0 || totalDocuments > 0) && (
+        <div className="space-y-3">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <h3 className="text-sm font-semibold text-foreground">Fichiers recents</h3>
+              <p className="text-xs text-muted-foreground">
+                {totalDocuments.toLocaleString()} document{totalDocuments > 1 ? 's' : ''} en base
+              </p>
+            </div>
+            {isFetching && (
+              <span className="text-xs text-muted-foreground">Mise a jour...</span>
+            )}
+          </div>
+
+          {recentFiles.length > 0 ? (
+            recentFiles.map((file) => {
+              const doc = docById[file.id];
+              return (
+                <FileRow
+                  key={file.id}
+                  file={file}
+                  sourcePath={doc?.source_path}
+                  errorMessage={doc?.error_message}
+                  onDelete={onDelete}
+                />
+              );
+            })
+          ) : (
+            <div className="rounded-lg border border-dashed border-border bg-muted/20 px-4 py-6 text-sm text-muted-foreground">
+              Aucun document sur cette page.
+            </div>
+          )}
+
+          <TablePagination
+            pageIndex={pageIndex}
+            pageCount={pageCount}
+            pageSize={pageSize}
+            totalRows={totalDocuments}
+            onPageChange={onPageChange}
+            onPageSizeChange={onPageSizeChange}
+          />
         </div>
       )}
     </div>

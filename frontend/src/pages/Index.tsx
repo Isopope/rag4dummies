@@ -51,7 +51,18 @@ const Index = () => {
     useRagQuery();
   const { sessions, deleteSession: doDelete, renameSession: doRename, refresh: refreshSessions } = useSessions();
   const { files, upload } = useIngest();
-  const { documents, deleteDocument: doDeleteDoc } = useDocuments();
+  const {
+    documents,
+    stats: documentStats,
+    total: documentsTotal,
+    pageIndex: documentsPageIndex,
+    pageCount: documentsPageCount,
+    pageSize: documentsPageSize,
+    isFetching: isDocumentsFetching,
+    setPageIndex: setDocumentsPageIndex,
+    setPageSize: setDocumentsPageSize,
+    deleteDocument: doDeleteDoc,
+  } = useDocuments();
 
   useEffect(() => {
     if (isAuthLoading) return;
@@ -272,6 +283,14 @@ const Index = () => {
         <IngestionPage
           uploadingFiles={files}
           documents={documents}
+          documentStats={documentStats}
+          documentsTotal={documentsTotal}
+          documentsPageIndex={documentsPageIndex}
+          documentsPageCount={documentsPageCount}
+          documentsPageSize={documentsPageSize}
+          isDocumentsFetching={isDocumentsFetching}
+          onDocumentsPageChange={setDocumentsPageIndex}
+          onDocumentsPageSizeChange={setDocumentsPageSize}
           onUpload={(file, entity, validityDate) => upload(file, undefined, undefined, entity, validityDate)}
           onDeleteDocument={doDeleteDoc}
         />

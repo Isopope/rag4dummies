@@ -287,10 +287,30 @@ export interface DocumentItem {
   error_message: string | null;
 }
 
-export async function listDocuments(token: string, status?: string, limit = 100): Promise<DocumentItem[]> {
-  const params = new URLSearchParams({ limit: String(limit) });
-  if (status) params.set('status', status);
-  const res = await fetch(`${BASE}/documents?${params}`, { headers: jsonHeaders(token) });
+export interface DocumentListStats {
+  total_documents: number;
+  indexed_documents: number;
+  total_chunks: number;
+}
+
+export interface PaginatedDocumentsResponse {
+  items: DocumentItem[];
+  total: number;
+  limit: number;
+  offset: number;
+  stats: DocumentListStats;
+}
+
+export async function listDocuments(
+  token: string,
+  params: { status?: string; limit?: number; offset?: number } = {},
+): Promise<PaginatedDocumentsResponse> {
+  const search = new URLSearchParams({
+    limit: String(params.limit ?? 100),
+    offset: String(params.offset ?? 0),
+  });
+  if (params.status) search.set('status', params.status);
+  const res = await fetch(`${BASE}/documents?${search}`, { headers: jsonHeaders(token) });
   await assertOk(res);
   return res.json();
 }

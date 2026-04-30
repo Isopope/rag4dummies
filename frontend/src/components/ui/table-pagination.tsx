@@ -38,7 +38,7 @@ export function TablePagination({
   return (
     <div className={cn('flex items-center justify-between gap-4 text-xs text-muted-foreground', className)}>
       <div className="flex items-center gap-2">
-        <span>Rows per page</span>
+        <span>Lignes par page</span>
         <Select value={String(pageSize)} onValueChange={(v) => onPageSizeChange(Number(v))}>
           <SelectTrigger className="h-7 w-[72px] text-xs">
             <SelectValue />
@@ -55,7 +55,7 @@ export function TablePagination({
 
       <div className="flex items-center gap-3">
         <span>
-          {start}-{end} of {totalRows.toLocaleString()}
+          {start}-{end} sur {totalRows.toLocaleString()}
         </span>
         <div className="flex items-center gap-1">
           <Button
@@ -64,7 +64,7 @@ export function TablePagination({
             className="h-7 w-7"
             disabled={!canPrev}
             onClick={() => onPageChange(0)}
-            aria-label="First page"
+            aria-label="Premiere page"
           >
             <ChevronsLeft className="w-3.5 h-3.5" />
           </Button>
@@ -74,7 +74,7 @@ export function TablePagination({
             className="h-7 w-7"
             disabled={!canPrev}
             onClick={() => onPageChange(pageIndex - 1)}
-            aria-label="Previous page"
+            aria-label="Page precedente"
           >
             <ChevronLeft className="w-3.5 h-3.5" />
           </Button>
@@ -87,7 +87,7 @@ export function TablePagination({
             className="h-7 w-7"
             disabled={!canNext}
             onClick={() => onPageChange(pageIndex + 1)}
-            aria-label="Next page"
+            aria-label="Page suivante"
           >
             <ChevronRight className="w-3.5 h-3.5" />
           </Button>
@@ -97,7 +97,7 @@ export function TablePagination({
             className="h-7 w-7"
             disabled={!canNext}
             onClick={() => onPageChange(pageCount - 1)}
-            aria-label="Last page"
+            aria-label="Derniere page"
           >
             <ChevronsRight className="w-3.5 h-3.5" />
           </Button>
