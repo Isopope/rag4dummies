@@ -18,6 +18,7 @@ from ..models import (
     SessionItem,
     SessionMessageItem,
     ChunkModel,
+    TokenUsageSummary,
 )
 from ..auth import current_active_user
 from db import get_db_session
@@ -71,8 +72,12 @@ def _conv_to_detail(conv) -> SessionDetail:
     messages = []
     for m in conv.messages:
         meta = {}
+        usage = None
         try:
             meta = json.loads(m.metadata_json or "{}")
+            raw_usage = meta.get("usage")
+            if isinstance(raw_usage, dict):
+                usage = TokenUsageSummary(**raw_usage)
         except Exception:
             pass
         messages.append(
@@ -82,6 +87,7 @@ def _conv_to_detail(conv) -> SessionDetail:
                 content=m.content,
                 sources=_load_sources(m.sources_json),
                 follow_up_suggestions=meta.get("follow_up_suggestions", []),
+                usage=usage,
                 created_at=m.created_at.isoformat(),
             )
         )

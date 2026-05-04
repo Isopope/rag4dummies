@@ -50,6 +50,29 @@ class ChunkModel(BaseModel):
     )
 
 
+class TokenUsageBucket(BaseModel):
+    input_tokens: int = 0
+    output_tokens: int = 0
+    total_tokens: int = 0
+    call_count: int = 0
+
+
+class TokenUsageCall(BaseModel):
+    kind: str
+    model: str
+    input_tokens: int = 0
+    output_tokens: int = 0
+    total_tokens: int = 0
+    raw_usage: dict[str, Any] = Field(default_factory=dict)
+
+
+class TokenUsageSummary(BaseModel):
+    llm: TokenUsageBucket = Field(default_factory=TokenUsageBucket)
+    embeddings: TokenUsageBucket = Field(default_factory=TokenUsageBucket)
+    total: TokenUsageBucket = Field(default_factory=TokenUsageBucket)
+    calls: list[TokenUsageCall] = Field(default_factory=list)
+
+
 # ── Réponses query ─────────────────────────────────────────────────────────────
 
 class QueryResponse(BaseModel):
@@ -61,6 +84,7 @@ class QueryResponse(BaseModel):
     conversation_title: Optional[str] = None
     n_retrieved: int = 0
     decision_log: list[dict[str, Any]] = []
+    usage: Optional[TokenUsageSummary] = None
     error: Optional[str] = None
 
 
@@ -75,6 +99,7 @@ class StreamEvent(BaseModel):
     conversation_title: Optional[str] = None
     question_id: Optional[str] = None
     session_id: Optional[str] = None
+    usage: Optional[TokenUsageSummary] = None
     error: Optional[str] = None
 
 
@@ -198,6 +223,7 @@ class FeedbackRequest(BaseModel):
     decision_log: list[dict[str, Any]] = Field(default_factory=list, description="Journal des décisions de l'agent")
     follow_up_suggestions: list[str] = Field(default_factory=list, description="Suggestions de questions de suivi")
     n_retrieved: int = Field(0, ge=0, description="Nombre de chunks récupérés")
+    usage: Optional[TokenUsageSummary] = Field(None, description="Consommation réelle LLM/embedding pour cette réponse")
 
 
 class FeedbackResponse(BaseModel):
@@ -227,6 +253,7 @@ class SessionMessageItem(BaseModel):
     content: str
     sources: list[ChunkModel] = []
     follow_up_suggestions: list[str] = []
+    usage: Optional[TokenUsageSummary] = None
     created_at: str
 
 

@@ -1,6 +1,6 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { streamQueryRAG, submitFeedback } from '@/lib/api';
-import type { ChunkModel, FeedbackPayload, SessionDetail } from '@/lib/api';
+import type { ChunkModel, FeedbackPayload, SessionDetail, TokenUsageSummary } from '@/lib/api';
 import type {
   ChatMessage,
   MessageFeedback,
@@ -141,6 +141,7 @@ export function useRagQuery() {
     let finalFollowUps: string[] = [];
     let finalTitle: string | undefined;
     let finalQuestionId: string | undefined;
+    let finalUsage: TokenUsageSummary | undefined;
     const steps: AgentStep[] = [];
 
     try {
@@ -176,6 +177,7 @@ export function useRagQuery() {
           finalFollowUps  = event.follow_up_suggestions ?? [];
           finalTitle      = event.conversation_title;
           finalQuestionId = event.question_id;
+          finalUsage      = event.usage;
           if (event.session_id) setSessionId(event.session_id);
         } else if (event.type === 'error') {
           throw new Error(event.error ?? 'Erreur SSE');
@@ -193,6 +195,7 @@ export function useRagQuery() {
         followUps: finalFollowUps,
         title: finalTitle,
         nRetrieved: finalSources.length,
+        usage: finalUsage,
       };
 
       setMessages((prev) =>
@@ -300,6 +303,7 @@ export function useRagQuery() {
         sources: context.sources,
         follow_up_suggestions: context.followUps,
         n_retrieved: context.nRetrieved,
+        usage: context.usage,
       };
       await submitFeedback(payload);
       toast.success(feedback.vote === 'up' ? 'Merci pour votre retour !' : 'Retour enregistré.');
@@ -361,6 +365,7 @@ export function useRagQuery() {
                 sources: m.sources,
                 followUps: m.follow_up_suggestions,
                 nRetrieved: m.sources.length,
+                usage: m.usage,
               }
             : undefined,
         });

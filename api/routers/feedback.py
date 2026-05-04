@@ -47,6 +47,7 @@ async def submit_feedback(
             decision_log          = body.decision_log,
             follow_up_suggestions = body.follow_up_suggestions,
             n_retrieved           = body.n_retrieved,
+            usage                 = body.usage.model_dump() if body.usage is not None else None,
         )
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc))

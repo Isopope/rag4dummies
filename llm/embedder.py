@@ -4,9 +4,12 @@ Inspired by Onyx's modular NLP architecture.
 """
 import threading
 import time
+from contextvars import copy_context
 from typing import Any, Callable, Optional, Union
 
 from loguru import logger
+
+from .usage import record_embedding_usage
 
 from .constants import (
     DEFAULT_EMBEDDING_MODELS,
@@ -102,11 +105,13 @@ class EmbeddingModel:
             def _run():
                 try:
                     resp = litellm.embedding(**kwargs)
+                    record_embedding_usage(self.model, resp)
                     result["vectors"] = [item["embedding"] for item in resp.data]
                 except Exception as exc:
                     result["error"] = exc
 
-            t = threading.Thread(target=_run, daemon=True)
+            ctx = copy_context()
+            t = threading.Thread(target=lambda: ctx.run(_run), daemon=True)
             t.start()
             t.join(timeout=self.timeout)
 

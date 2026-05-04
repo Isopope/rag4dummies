@@ -3,10 +3,12 @@ Centralized LLM Factory using LiteLLM.
 Provides unified access to OpenAI, Mistral, Anthropic, Ollama, etc.
 """
 from typing import Any, Optional
-import os
 import threading
+from contextvars import copy_context
 
 from loguru import logger
+
+from .usage import record_completion_usage
 
 def get_llm_completion(
     model: str,
@@ -43,12 +45,14 @@ def get_llm_completion(
                 api_base=api_base,
                 **kwargs
             )
+            record_completion_usage(model, resp)
             result["response"] = resp
         except Exception as e:
             logger.error(f"LiteLLM completion error: {e}")
             result["error"] = e
 
-    t = threading.Thread(target=_run, daemon=True)
+    ctx = copy_context()
+    t = threading.Thread(target=lambda: ctx.run(_run), daemon=True)
     t.start()
     t.join(timeout=timeout)
 

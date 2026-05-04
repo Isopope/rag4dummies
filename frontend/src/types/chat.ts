@@ -1,4 +1,4 @@
-import type { ChunkModel } from '@/lib/api';
+import type { ChunkModel, TokenUsageSummary } from '@/lib/api';
 import type { CellValue } from '@/lib/table-utils';
 
 export type MessageContentType = 'text' | 'image' | 'chart' | 'json' | 'code' | 'file' | 'table';
@@ -54,6 +54,7 @@ export interface MessageFeedbackContext {
   sources?: ChunkModel[];
   followUps?: string[];
   nRetrieved?: number;
+  usage?: TokenUsageSummary;
 }
 
 export interface MessageSource {

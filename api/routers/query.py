@@ -17,6 +17,7 @@ from ..models import BboxModel, ChunkModel, QueryRequest, QueryResponse, StreamE
 from db import get_db_session
 from db.models.user import User
 from db.repositories import ConversationRepository
+from llm.usage import track_usage
 
 router = APIRouter()
 
@@ -93,10 +94,16 @@ async def query(
 ) -> QueryResponse:
     agent = get_agent_for_model(body.model)
     loop = asyncio.get_event_loop()
+
+    def _run_query():
+        with track_usage() as tracker:
+            result = agent.query(question=body.question, source=body.source_filter)
+        return result, tracker.snapshot()
+
     try:
-        result = await loop.run_in_executor(
+        result, usage = await loop.run_in_executor(
             _THREAD_POOL,
-            lambda: agent.query(question=body.question, source=body.source_filter),
+            _run_query,
         )
     except Exception as exc:
         logger.exception("Erreur query RAG : {}", exc)
@@ -119,6 +126,7 @@ async def query(
         conversation_title      = result.get("conversation_title"),
         n_retrieved             = result.get("n_retrieved", 0),
         decision_log            = result.get("decision_log", []),
+        usage                   = usage,
         error                   = result.get("error"),
     )
 
@@ -147,16 +155,21 @@ async def query_stream(
 
     def _producer():
         """Exécute stream_query dans un thread et empile les événements dans la queue."""
+        tracker = None
         try:
-            for event in agent.stream_query(
-                question             = body.question,
-                source               = body.source_filter,
-                conversation_summary = body.conversation_summary,
-            ):
-                loop.call_soon_threadsafe(queue.put_nowait, event)
+            with track_usage() as current_tracker:
+                tracker = current_tracker
+                for event in agent.stream_query(
+                    question             = body.question,
+                    source               = body.source_filter,
+                    conversation_summary = body.conversation_summary,
+                ):
+                    loop.call_soon_threadsafe(queue.put_nowait, event)
         except Exception as exc:
             loop.call_soon_threadsafe(queue.put_nowait, {"__error__": str(exc)})
         finally:
+            if tracker is not None:
+                loop.call_soon_threadsafe(queue.put_nowait, {"__usage__": tracker.snapshot()})
             loop.call_soon_threadsafe(queue.put_nowait, None)  # sentinelle
 
     loop.run_in_executor(_THREAD_POOL, _producer)
@@ -167,9 +180,14 @@ async def query_stream(
         follow_ups: list[str]        = []
         title:      str | None       = None
         question_id: str | None      = None
+        usage_summary: dict | None   = None
 
         while True:
             event = await queue.get()
+
+            if isinstance(event, dict) and "__usage__" in event:
+                usage_summary = event["__usage__"]
+                continue
 
             # Erreur dans le thread producteur
             if isinstance(event, dict) and "__error__" in event:
@@ -200,6 +218,7 @@ async def query_stream(
                                 n_retrieved           = len(sources),
                                 question_id           = question_id,
                                 title                 = title,
+                                usage                 = usage_summary,
                             )
                         else:
                             conv = await repo.create_session(user_id=str(user.id), title=title)
@@ -212,6 +231,7 @@ async def query_stream(
                                 follow_up_suggestions = follow_ups,
                                 n_retrieved           = len(sources),
                                 question_id           = question_id,
+                                usage                 = usage_summary,
                             )
                         await db_session.commit()
                     except Exception as exc:
@@ -225,6 +245,7 @@ async def query_stream(
                     conversation_title    = title,
                     question_id           = question_id,
                     session_id            = saved_session_id,
+                    usage                 = usage_summary,
                 )
                 yield f"data: {done_evt.model_dump_json()}\n\n"
                 break

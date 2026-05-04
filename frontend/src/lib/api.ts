@@ -43,6 +43,29 @@ export interface ChunkModel {
   pdf_url?: string;
 }
 
+export interface TokenUsageBucket {
+  input_tokens: number;
+  output_tokens: number;
+  total_tokens: number;
+  call_count: number;
+}
+
+export interface TokenUsageCall {
+  kind: string;
+  model: string;
+  input_tokens: number;
+  output_tokens: number;
+  total_tokens: number;
+  raw_usage: Record<string, unknown>;
+}
+
+export interface TokenUsageSummary {
+  llm: TokenUsageBucket;
+  embeddings: TokenUsageBucket;
+  total: TokenUsageBucket;
+  calls: TokenUsageCall[];
+}
+
 export interface QueryRequest {
   question: string;
   source_filter?: string;
@@ -60,6 +83,7 @@ export interface QueryResponse {
   conversation_title?: string;
   n_retrieved: number;
   decision_log: Record<string, unknown>[];
+  usage?: TokenUsageSummary;
   error?: string;
 }
 
@@ -73,6 +97,7 @@ export interface StreamEvent {
   conversation_title?: string;
   question_id?: string;
   session_id?: string;
+  usage?: TokenUsageSummary;
   error?: string;
 }
 
@@ -120,6 +145,7 @@ export interface FeedbackPayload {
   follow_up_suggestions?: string[];
   n_retrieved?: number;
   decision_log?: Record<string, unknown>[];
+  usage?: TokenUsageSummary;
 }
 
 export interface LoginResponse {
@@ -348,6 +374,7 @@ export interface SessionMessage {
   content: string;
   sources: ChunkModel[];
   follow_up_suggestions: string[];
+  usage?: TokenUsageSummary;
   created_at: string;
 }
 

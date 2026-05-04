@@ -40,6 +40,7 @@ class ConversationRepository:
         decision_log: list[dict[str, Any]] | None = None,
         follow_up_suggestions: list[str] | None = None,
         n_retrieved: int = 0,
+        usage: dict[str, Any] | None = None,
     ) -> tuple[Conversation, Message]:
         """Crée atomiquement une conversation + 2 messages avec feedback.
 
@@ -69,6 +70,8 @@ class ConversationRepository:
             "follow_up_suggestions": follow_up_suggestions or [],
             "n_retrieved":           n_retrieved,
         }
+        if usage is not None:
+            metadata["usage"] = usage
 
         # Message assistant (réponse LLM + feedback)
         asst_msg = Message(
@@ -163,6 +166,7 @@ class ConversationRepository:
         n_retrieved: int = 0,
         question_id: str | None = None,
         title: str | None = None,
+        usage: dict[str, Any] | None = None,
     ) -> tuple[Message, Message] | None:
         """Ajoute un tour (question + réponse) à une session existante.
 
@@ -195,6 +199,8 @@ class ConversationRepository:
             "follow_up_suggestions": follow_up_suggestions or [],
             "n_retrieved":           n_retrieved,
         }
+        if usage is not None:
+            metadata["usage"] = usage
 
         asst_msg = Message(
             conversation_id=conv.id,
