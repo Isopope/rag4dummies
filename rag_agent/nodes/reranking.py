@@ -1,10 +1,20 @@
-"""Nœuds rerank — Cohere + fallback LLM.
+"""Nœuds rerank — Cohere + fallback LLM + fusion wRRF agentique.
+
+Architecture du reranking :
+  Liste A : retrieved_docs triés par _accumulated_rrf + _neighbor_bonus
+            (signal agentique : chunks retrouvés souvent par la boucle ReAct)
+  Liste B : sortie de _cohere_rerank ou _llm_rerank
+            (signal de pertinence froide)
+  Fusion  : weighted_rrf([A, B], [1.0, 1.2])
+            Le reranker est légèrement favorisé pour les cas simples,
+            mais la Liste A compense pour les chunks multi-retrouvés.
 
 Port de rag_pipeline.py:855-972.
 """
 from __future__ import annotations
 
 import re
+from pathlib import Path
 from typing import Any, Callable, Optional
 
 from loguru import logger
@@ -12,6 +22,7 @@ from loguru import logger
 from ..config import RAGConfig
 from ..llm import parse_json_llm
 from ..state import UnifiedRAGState, log_entry
+from ..tools.query import weighted_rrf
 
 
 def _cohere_rerank(
@@ -19,7 +30,11 @@ def _cohere_rerank(
     question: str,
     cohere_client: Any,
 ) -> list[dict]:
-    """Reranking Cohere rerank-multilingual-v3.0."""
+    """Reranking Cohere rerank-multilingual-v3.0.
+
+    Retourne tous les docs triés par _rerank_score décroissant
+    (sans troncature — la troncature finale est gérée par la fusion wRRF).
+    """
     docs_texts = [(doc.get("page_content") or "")[:2048] for doc in docs]
     response   = cohere_client.rerank(
         query=question,
@@ -31,7 +46,7 @@ def _cohere_rerank(
     scored = [{**doc} for doc in docs]
     for result in response.results:
         scored[result.index]["_rerank_score"] = result.relevance_score
-    return sorted(scored, key=lambda d: float(d.get("_rerank_score", 0.0)), reverse=True)[:20]
+    return sorted(scored, key=lambda d: float(d.get("_rerank_score", 0.0)), reverse=True)
 
 
 def _llm_rerank(
@@ -40,19 +55,29 @@ def _llm_rerank(
     llm_call: Callable,
     llm_timeout: float,
 ) -> list[dict]:
-    """Reranking LLM fallback — note chaque chunk de 0 à 10."""
+    """Reranking LLM fallback — note chaque chunk de 0 à 10.
+
+    Améliorations vs. version originale :
+    - Troncature 400 → 800 caractères (moins de perte d'information clé)
+    - Ajout de _hit_count comme signal contextuel pour le LLM
+    - Retourne tous les docs triés (sans troncature : gérée par la fusion wRRF)
+    """
     summaries = []
     for i, doc in enumerate(docs):
-        kind   = doc.get("kind", "text")
-        title  = (doc.get("title_path") or "").strip()
-        text_  = (doc.get("page_content") or "")[:400].replace("\n", " ")
-        extra  = " *(contexte étendu)*" if doc.get("_expanded") else ""
-        summaries.append(f"[{i}] {kind}{extra} | {title} | {text_}…")
+        kind      = doc.get("kind", "text")
+        title     = (doc.get("title_path") or "").strip()
+        text_     = (doc.get("page_content") or "")[:800].replace("\n", " ")  # 400 → 800
+        hit_count = doc.get("_hit_count", 1)
+        hit_info  = f" [retrouvé {hit_count}x]" if hit_count > 1 else ""
+        extra     = " *(contexte étendu)*" if doc.get("_expanded") else ""
+        summaries.append(f"[{i}] {kind}{extra}{hit_info} | {title} | {text_}…")
 
     prompt = (
         f"Question : {question}\n\n"
         "Note la pertinence de chaque extrait de 0 à 10 "
         "(10 = répond parfaitement à la question, 0 = hors sujet).\n"
+        "L'indication [retrouvé Nx] signifie que l'agent a trouvé cet extrait N fois — "
+        "tiens-en compte comme signal de pertinence.\n"
         "Réponds UNIQUEMENT avec un tableau JSON compact d'entiers sur UNE SEULE LIGNE, "
         "dans l'ordre exact des extraits (sans balise markdown, sans indentation, sans saut de ligne).\n"
         f"Exemple pour {len(docs)} extraits : [{', '.join(['8'] * min(len(docs), 4))}"
@@ -94,7 +119,8 @@ def _llm_rerank(
     scored = [{**doc} for doc in docs]
     for i, doc in enumerate(scored):
         doc["_rerank_score"] = scores[i]
-    return sorted(scored, key=lambda d: float(d.get("_rerank_score", 0.0)), reverse=True)[:20]
+    # Retourne tous les docs triés, sans [:20] — la troncature est gérée par la fusion wRRF
+    return sorted(scored, key=lambda d: float(d.get("_rerank_score", 0.0)), reverse=True)
 
 
 def rerank(
@@ -104,26 +130,42 @@ def rerank(
     cohere_client: Optional[Any],
     rag_config: RAGConfig,
 ) -> dict:
-    """Nœud 4 : reranking Cohere (si dispo) ou fallback LLM."""
+    """Nœud 4 : reranking avec fusion wRRF (signal agentique + signal pertinence froide).
+
+    Deux listes indépendantes sont construites puis fusionnées :
+      Liste A : triée par _accumulated_rrf + _neighbor_bonus  (signal récurrence agent)
+      Liste B : sortie Cohere ou LLM                          (signal pertinence froide)
+    weighted_rrf([A, B], [1.0, 1.2]) — le reranker est légèrement favorisé,
+    mais la Liste A compense pour les chunks retrouvés plusieurs fois.
+    """
     qid      = state["question_id"]
     docs     = state.get("retrieved_docs", [])
     question = state["question"]
     log      = list(state.get("decision_log", []))
+    top_k    = getattr(rag_config, "top_k_rerank", rag_config.top_k_final)
 
     if not docs:
         log.append(log_entry("rerank", "Aucun document à reranker"))
         return {"reranked_docs": [], "decision_log": log}
 
-    # ── Cohere ────────────────────────────────────────────────────────────────
+    # ── Liste A : signal agentique (récurrence des récupérations) ─────────────
+    list_a = sorted(
+        docs,
+        key=lambda d: d.get("_accumulated_rrf", 0.0) + d.get("_neighbor_bonus", 0.0),
+        reverse=True,
+    )
+
+    # ── Liste B : signal de pertinence froide (Cohere ou LLM) ─────────────────
+    list_b: list[dict] = []
+
     if rag_config.use_cohere_rerank and cohere_client is not None:
         try:
-            reranked = _cohere_rerank(docs, question, cohere_client)
+            list_b = _cohere_rerank(docs, question, cohere_client)
             log.append(log_entry(
                 "rerank.cohere",
-                f"Cohere Rerank : {len(docs)} → {len(reranked)} chunks",
-                {"n_input": len(docs), "n_output": len(reranked)},
+                f"Cohere Rerank : {len(docs)} docs scorés (Liste B)",
+                {"n_input": len(docs)},
             ))
-            return {"reranked_docs": reranked, "decision_log": log}
         except Exception as exc:
             logger.warning("[{}] Cohere Rerank échoué, fallback LLM : {}", qid, exc)
             log.append(log_entry(
@@ -132,11 +174,34 @@ def rerank(
                 {"error": str(exc)},
             ))
 
-    # ── Fallback LLM ──────────────────────────────────────────────────────────
-    reranked = _llm_rerank(docs, question, llm_call, rag_config.llm_timeout)
+    if not list_b:
+        # Fallback LLM
+        list_b = _llm_rerank(docs, question, llm_call, rag_config.llm_timeout)
+        log.append(log_entry(
+            "rerank.llm",
+            f"LLM Rerank : {len(docs)} docs scorés (Liste B)",
+            {"n_input": len(docs)},
+        ))
+
+    # ── Fusion wRRF (Liste A + Liste B) ───────────────────────────────────────
+    # Poids : reranker légèrement favorisé (1.2) pour les cas simples,
+    # mais la Liste A compense pour les chunks retrouvés plusieurs fois.
+    reranked = weighted_rrf([list_a, list_b], [1.0, 1.2])[:top_k]
+
+    top_chunk_info = None
+    if reranked:
+        top = reranked[0]
+        top_chunk_info = (
+            f"{Path(top.get('source', '')).name}"
+            f"[{top.get('chunk_index')}] hits={top.get('_hit_count', 1)}"
+        )
     log.append(log_entry(
-        "rerank.llm",
-        f"LLM Rerank : {len(docs)} → {len(reranked)} chunks",
-        {"n_input": len(docs), "n_output": len(reranked)},
+        "rerank.fusion",
+        f"wRRF(A agentique, B reranker) : {len(docs)} → {len(reranked)} chunks (top {top_k})",
+        {
+            "n_input":   len(docs),
+            "n_output":  len(reranked),
+            "top_chunk": top_chunk_info,
+        },
     ))
     return {"reranked_docs": reranked, "decision_log": log}

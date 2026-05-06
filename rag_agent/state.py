@@ -86,8 +86,12 @@ class UnifiedRAGState(TypedDict):
     available_sources: list[str]
     """Chemins complets de tous les documents indexés dans Weaviate."""
 
+    manual_source_filter: Optional[str]
+    """Filtre strict demandé explicitement par l'appelant.
+    C'est la seule contrainte document stricte du pipeline."""
+
     source_filter: Optional[str]
-    """Si défini, restreint toutes les recherches à ce chemin de source."""
+    """Alias legacy de `manual_source_filter`, conservé pour compatibilité API/tests."""
 
     target_sources: list[str]
     """Documents explicitement ciblés par la planification, résolus en chemins complets."""
@@ -222,8 +226,9 @@ def create_unified_state(
         conversation_id=conversation_id or qid,
         question=question,
         available_sources=available_sources or [],
+        manual_source_filter=source,
         source_filter=source,
-        target_sources=[source] if source else [],
+        target_sources=[],
         conversation_summary=conversation_summary,
         collection_metadata=collection_metadata or {},
         collection_names=collection_names or ["RagChunk"],

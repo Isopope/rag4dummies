@@ -6,6 +6,9 @@ QueryTool intègre la logique de production de rag_pipeline.py :
 - Weighted Reciprocal Rank Fusion (wRRF)
 - Retry avec backoff exponentiel sur Weaviate
 - Mode mock sans infrastructure réelle
+- Séparation filtre strict / ciblage souple :
+  - manual_source_filter : contrainte document stricte demandée explicitement
+  - target_sources       : documents suggérés par le planning, utilisés comme biais
 """
 from __future__ import annotations
 
@@ -55,20 +58,33 @@ def weighted_rrf(
     Formule : score(doc) = Σ weight_i / (k + rank_i)
     Port exact de rag_pipeline.py:195-219.
     """
+    def _merge_doc(existing: dict, new_doc: dict) -> dict:
+        merged = {**existing, **new_doc}
+        for key in set(existing) | set(new_doc):
+            existing_val = existing.get(key)
+            new_val = new_doc.get(key)
+            if key.startswith("_"):
+                if new_val is None and existing_val is not None:
+                    merged[key] = existing_val
+                elif existing_val is not None and new_val is None:
+                    merged[key] = existing_val
+        merged["_score"] = max(existing.get("_score") or 0.0, new_doc.get("_score") or 0.0)
+        return merged
+
     rrf_scores: dict[tuple[str, int], float] = {}
-    best_doc:   dict[tuple[str, int], dict]  = {}
+    merged_docs: dict[tuple[str, int], dict] = {}
 
     for result_list, weight in zip(ranked_results, weights):
         for rank, doc in enumerate(result_list, start=1):
             key = (doc.get("source", ""), int(doc.get("chunk_index", -1)))
             rrf_scores[key] = rrf_scores.get(key, 0.0) + weight / (k + rank)
-            if key not in best_doc:
-                best_doc[key] = doc
-            elif (doc.get("_score") or 0.0) > (best_doc[key].get("_score") or 0.0):
-                best_doc[key] = doc
+            if key not in merged_docs:
+                merged_docs[key] = {**doc}
+            else:
+                merged_docs[key] = _merge_doc(merged_docs[key], doc)
 
     return [
-        {**best_doc[key], "_score": rrf_scores[key]}
+        {**merged_docs[key], "_score": rrf_scores[key]}
         for key in sorted(rrf_scores, key=lambda x: rrf_scores[x], reverse=True)
     ]
 
@@ -132,13 +148,23 @@ class QueryTool:
     def execute(
         self,
         query: str,
-        source_filter: Optional[str] = None,
+        manual_source_filter: Optional[str] = None,
+        target_sources: Optional[list[str]] = None,
         top_k: int = 20,
         alpha: float = 0.5,
     ) -> list[dict]:
-        """Effectue une double recherche hybride + wRRF.
+        """Effectue une recherche hybride avec séparation filtre strict / biais souple.
 
-        Retourne une liste de chunks triés par score décroissant.
+        Quand manual_source_filter est fourni :
+          - Recherche strictement limitée à ce document.
+
+        Quand target_sources est fourni sans filtre strict :
+          - Recherche globale classique.
+          - Recherches ciblées supplémentaires sur les documents suggérés.
+          - Fusion wRRF avec un léger bonus pour les listes ciblées.
+
+        Sinon :
+          - Double recherche hybride globale (comportement standard).
         """
         if self.weaviate_store is None:
             return self._mock_results(query, top_k)
@@ -147,17 +173,54 @@ class QueryTool:
             raise RuntimeError("Un embedder est requis pour la recherche réelle")
 
         vector   = self.embedder(query.strip() or " ")
-        sem_docs = weaviate_with_retry(
+        alpha_kw = max(0.0, round(alpha - 0.3, 1))
+        soft_targets = list(dict.fromkeys(target_sources or []))
+
+        if manual_source_filter:
+            sem_docs = weaviate_with_retry(
+                self.weaviate_store.hybrid_search,
+                query=query, query_vector=vector,
+                top_k=top_k, alpha=alpha, source=manual_source_filter,
+            )
+            kw_docs = weaviate_with_retry(
+                self.weaviate_store.hybrid_search,
+                query=query, query_vector=vector,
+                top_k=top_k, alpha=alpha_kw, source=manual_source_filter,
+            )
+            return weighted_rrf([sem_docs, kw_docs], [1.0, 0.5])
+
+        global_sem = weaviate_with_retry(
             self.weaviate_store.hybrid_search,
             query=query, query_vector=vector,
-            top_k=top_k, alpha=alpha, source=source_filter,
+            top_k=top_k, alpha=alpha, source=None,
         )
-        kw_docs  = weaviate_with_retry(
+        global_kw = weaviate_with_retry(
             self.weaviate_store.hybrid_search,
             query=query, query_vector=vector,
-            top_k=top_k, alpha=max(0.0, round(alpha - 0.3, 1)), source=source_filter,
+            top_k=top_k, alpha=alpha_kw, source=None,
         )
-        return weighted_rrf([sem_docs, kw_docs], [1.0, 0.5])
+
+        if soft_targets:
+            ranked_results: list[list[dict]] = [global_sem, global_kw]
+            weights: list[float] = [1.0, 0.5]
+
+            for target in soft_targets:
+                targeted_sem = weaviate_with_retry(
+                    self.weaviate_store.hybrid_search,
+                    query=query, query_vector=vector,
+                    top_k=top_k, alpha=alpha, source=target,
+                )
+                targeted_kw = weaviate_with_retry(
+                    self.weaviate_store.hybrid_search,
+                    query=query, query_vector=vector,
+                    top_k=top_k, alpha=alpha_kw, source=target,
+                )
+                ranked_results.extend([targeted_sem, targeted_kw])
+                weights.extend([1.2, 0.6])
+
+            return weighted_rrf(ranked_results, weights)
+
+        return weighted_rrf([global_sem, global_kw], [1.0, 0.5])
 
     def get_chunk_by_index(self, source: str, idx: int) -> Optional[dict]:
         """Récupère un chunk voisin par son index."""
@@ -197,12 +260,18 @@ class QueryTool:
     ) -> UnifiedRAGState:
         """Execute la recherche et écrit le résultat dans state['environment']."""
         colls = collection_names or state.get("collection_names") or ["RagChunk"]
-        source_filter = (filters or {}).get("source") or state.get("source_filter")
+        manual_source_filter = (
+            (filters or {}).get("source")
+            or state.get("manual_source_filter")
+            or state.get("source_filter")
+        )
+        target_sources = state.get("target_sources", [])
 
         try:
             raw_docs = self.execute(
                 query=search_query,
-                source_filter=source_filter,
+                manual_source_filter=manual_source_filter,
+                target_sources=target_sources,
                 top_k=limit,
             )
             objects = [

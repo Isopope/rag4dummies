@@ -144,7 +144,9 @@ def test_create_unified_state_for_graph():
         conversation_summary="Historique de conversation.",
     )
     assert state["question"]          == "Politique de dépenses ?"
+    assert state["manual_source_filter"] == "/docs/budget.pdf"
     assert state["source_filter"]     == "/docs/budget.pdf"
+    assert state["target_sources"]    == []
     assert state["conversation_summary"] == "Historique de conversation."
     assert state["current_branch"]    == "plan"
     assert state["tree_depth"]        == 0

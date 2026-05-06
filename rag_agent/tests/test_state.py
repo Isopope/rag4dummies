@@ -32,7 +32,9 @@ def test_create_unified_state_defaults():
 
 def test_create_unified_state_with_source():
     state = create_unified_state("Q", source="/docs/file.pdf", available_sources=["/docs/file.pdf"])
+    assert state["manual_source_filter"] == "/docs/file.pdf"
     assert state["source_filter"] == "/docs/file.pdf"
+    assert state["target_sources"] == []
     assert "/docs/file.pdf" in state["available_sources"]
 
 

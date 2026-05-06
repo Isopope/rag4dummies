@@ -56,7 +56,7 @@ def _make_llm_call_with_tool(tool_name: str, tool_args: dict):
 def test_analyze_and_plan_basic(config):
     from rag_agent.nodes.planning import analyze_and_plan
     state  = create_unified_state("Quel est le budget 2024 ?", available_sources=["/docs/budget.pdf"])
-    result = analyze_and_plan(state, llm_call=_make_llm_call(), config=config)
+    result = analyze_and_plan(state, llm_call=_make_llm_call(), rag_config=config)
     assert "sub_queries" in result
     assert len(result["sub_queries"]) >= 1
     assert result["current_branch"] == "plan"
@@ -67,8 +67,9 @@ def test_analyze_and_plan_target_resolution(config):
     from rag_agent.nodes.planning import analyze_and_plan
     json_content = '{"target": "budget.pdf", "reason": "PDF mentionné", "sub_queries": ["budget 2024"], "confidence": 0.95}'
     state        = create_unified_state("Parle-moi de budget.pdf", available_sources=["/docs/budget.pdf"])
-    result       = analyze_and_plan(state, llm_call=_make_llm_call(json_content), config=config)
-    assert result["source_filter"] == "/docs/budget.pdf"
+    result       = analyze_and_plan(state, llm_call=_make_llm_call(json_content), rag_config=config)
+    assert result["target_sources"] == ["/docs/budget.pdf"]
+    assert "source_filter" not in result
 
 
 def test_analyze_and_plan_llm_failure_fallback(config):
@@ -76,7 +77,7 @@ def test_analyze_and_plan_llm_failure_fallback(config):
     def failing_llm(messages, **kwargs):
         raise TimeoutError("LLM timeout")
     state  = create_unified_state("Question de test")
-    result = analyze_and_plan(state, llm_call=failing_llm, config=config)
+    result = analyze_and_plan(state, llm_call=failing_llm, rag_config=config)
     # Fallback : la question brute est utilisée comme unique sous-requête
     assert result["sub_queries"] == ["Question de test"]
 
@@ -86,7 +87,7 @@ def test_analyze_and_plan_pydantic_validation_error(config):
     from rag_agent.nodes.planning import analyze_and_plan
     bad_llm = _make_llm_call('{"sub_queries": []}')  # liste vide → validation error PlanningOutput
     state   = create_unified_state("Q ?")
-    result  = analyze_and_plan(state, llm_call=bad_llm, config=config)
+    result  = analyze_and_plan(state, llm_call=bad_llm, rag_config=config)
     # Fallback attendu
     assert result["sub_queries"] == ["Q ?"]
 
@@ -97,7 +98,7 @@ def test_agent_reason_builds_initial_prompt(config):
     from rag_agent.nodes.reasoning import agent_reason
     state = create_unified_state("Quelle est la politique ?")
     state["sub_queries"] = ["politique 2024"]  # type: ignore[index]
-    result = agent_reason(state, llm_call=_make_llm_call("RECHERCHE_TERMINEE"), config=config)
+    result = agent_reason(state, llm_call=_make_llm_call("RECHERCHE_TERMINEE"), rag_config=config)
     assert "messages" in result
     assert len(result["messages"]) >= 2  # user + assistant
 
@@ -106,7 +107,7 @@ def test_agent_reason_tool_call_appended(config):
     from rag_agent.nodes.reasoning import agent_reason
     state  = create_unified_state("Q ?")
     llm    = _make_llm_call_with_tool("search_documents", {"query": "test"})
-    result = agent_reason(state, llm_call=llm, config=config)
+    result = agent_reason(state, llm_call=llm, rag_config=config)
     last_msg = result["messages"][-1]
     assert last_msg["role"] == "assistant"
     assert last_msg.get("tool_calls") is not None
@@ -116,7 +117,7 @@ def test_agent_reason_iteration_counter(config):
     from rag_agent.nodes.reasoning import agent_reason
     state = create_unified_state("Q ?")
     state["agent_iterations"] = 3  # type: ignore[index]
-    result = agent_reason(state, llm_call=_make_llm_call("RECHERCHE_TERMINEE"), config=config)
+    result = agent_reason(state, llm_call=_make_llm_call("RECHERCHE_TERMINEE"), rag_config=config)
     assert result["agent_iterations"] == 4
 
 
@@ -138,7 +139,7 @@ def test_agent_action_search_documents(config, mock_query_tool):
             }],
         },
     ]
-    result = agent_action(state, query_tool=mock_query_tool, config=config)
+    result = agent_action(state, query_tool=mock_query_tool, rag_config=config)
     assert len(result["all_docs"]) > 0
     assert len(result["seen_keys"]) > 0
     assert ("budget 2024", 1.0) in result["seen_queries"]
@@ -161,7 +162,7 @@ def test_agent_action_duplicate_query_skipped(config, mock_query_tool):
             }],
         },
     ]
-    result = agent_action(state, query_tool=mock_query_tool, config=config)
+    result = agent_action(state, query_tool=mock_query_tool, rag_config=config)
     # Aucun nouveau doc ajouté
     assert result["all_docs"] == []
     # Le message tool contient "notice"
@@ -185,7 +186,7 @@ def test_agent_action_invalid_chunk_index(config, mock_query_tool):
             }],
         },
     ]
-    result = agent_action(state, query_tool=mock_query_tool, config=config)
+    result = agent_action(state, query_tool=mock_query_tool, rag_config=config)
     tool_resp = result["messages"][-1]
     assert "error" in tool_resp["content"].lower() or "invalide" in tool_resp["content"].lower()
 
@@ -198,7 +199,7 @@ def test_compress_context_resets_messages(config):
     state["all_docs"] = [{"source": "a.pdf", "chunk_index": 0, "page_content": "Content.", "kind": "text", "title_path": ""}]  # type: ignore[index]
     state["messages"] = [{"role": "user", "content": "msg"}]  # type: ignore[index]
     llm      = _make_llm_call("# Résumé compressé\n\nContenu synthétisé du document.")
-    result   = compress_context(state, llm_call=llm, config=config)
+    result   = compress_context(state, llm_call=llm, rag_config=config)
     assert result["messages"] == []  # réinitialisé
     assert len(result["context_summary"]) > 0
 
@@ -209,7 +210,7 @@ def test_compress_context_llm_failure_keeps_existing(config):
         raise TimeoutError("timeout")
     state  = create_unified_state("Q ?")
     state["context_summary"] = "Résumé existant."  # type: ignore[index]
-    result = compress_context(state, llm_call=failing_llm, config=config)
+    result = compress_context(state, llm_call=failing_llm, rag_config=config)
     assert result["context_summary"] == "Résumé existant."
 
 
@@ -223,14 +224,14 @@ def test_consolidate_chunks_deduplicates(config, mock_query_tool):
         {"source": "a.pdf", "chunk_index": 1, "_score": 0.7, "page_content": "A"},  # doublon
         {"source": "b.pdf", "chunk_index": 2, "_score": 0.8, "page_content": "B"},
     ]
-    result = consolidate_chunks(state, query_tool=mock_query_tool, config=config)
+    result = consolidate_chunks(state, query_tool=mock_query_tool, rag_config=config)
     assert len(result["retrieved_docs"]) == 2
 
 
 def test_consolidate_chunks_fallback_on_empty(config, mock_query_tool):
     from rag_agent.nodes.reasoning import consolidate_chunks
     state  = create_unified_state("Q ?")  # all_docs vide
-    result = consolidate_chunks(state, query_tool=mock_query_tool, config=config)
+    result = consolidate_chunks(state, query_tool=mock_query_tool, rag_config=config)
     # Fallback → mock_query_tool retourne 3 docs
     assert len(result["retrieved_docs"]) > 0
 
@@ -246,7 +247,7 @@ def test_rerank_llm_fallback(config):
     state = create_unified_state("Q ?")
     state["retrieved_docs"] = docs  # type: ignore[index]
     llm   = _make_llm_call("[9, 3]")
-    result = rerank(state, llm_call=llm, cohere_client=None, config=config)
+    result = rerank(state, llm_call=llm, cohere_client=None, rag_config=config)
     reranked = result["reranked_docs"]
     assert len(reranked) == 2
     assert reranked[0]["_rerank_score"] >= reranked[1]["_rerank_score"]
@@ -258,14 +259,14 @@ def test_rerank_malformed_llm_scores_fallback(config):
     state = create_unified_state("Q ?")
     state["retrieved_docs"] = docs  # type: ignore[index]
     llm   = _make_llm_call("Score: 7/10 et aussi 4/10")  # pas un JSON valide mais regex peut extraire
-    result = rerank(state, llm_call=llm, cohere_client=None, config=config)
+    result = rerank(state, llm_call=llm, cohere_client=None, rag_config=config)
     assert len(result["reranked_docs"]) == 1
 
 
 def test_rerank_no_docs(config):
     from rag_agent.nodes.reranking import rerank
     state = create_unified_state("Q ?")
-    result = rerank(state, llm_call=_make_llm_call(), cohere_client=None, config=config)
+    result = rerank(state, llm_call=_make_llm_call(), cohere_client=None, rag_config=config)
     assert result["reranked_docs"] == []
 
 
@@ -277,7 +278,7 @@ def test_generate_basic(config):
     state = create_unified_state("Quel est le budget ?")
     state["reranked_docs"] = docs  # type: ignore[index]
     llm   = _make_llm_call("Le budget est de 100 millions d'euros.\n\n---\n**Sources :**\n- budget.pdf")
-    result = generate(state, llm_call=llm, config=config)
+    result = generate(state, llm_call=llm, rag_config=config)
     assert "100" in result["answer"]
     assert result["error"] is None
     assert result["final_response"] == result["answer"]
@@ -286,7 +287,7 @@ def test_generate_basic(config):
 def test_generate_no_docs(config):
     from rag_agent.nodes.generation import generate
     state  = create_unified_state("Q ?")
-    result = generate(state, llm_call=_make_llm_call(), config=config)
+    result = generate(state, llm_call=_make_llm_call(), rag_config=config)
     assert "Aucun extrait" in result["answer"]
     assert result["error"] is None
 
@@ -297,7 +298,7 @@ def test_generate_with_conversation_summary(config):
     state = create_unified_state("Suite ?", conversation_summary="Précédemment : budget discuté.")
     state["reranked_docs"] = docs  # type: ignore[index]
     llm   = _make_llm_call("Réponse contextualisée.")
-    result = generate(state, llm_call=llm, config=config)
+    result = generate(state, llm_call=llm, rag_config=config)
     assert result["answer"] == "Réponse contextualisée."
 
 
@@ -306,7 +307,7 @@ def test_generate_follow_up(config):
     state  = create_unified_state("Budget ?")
     state["answer"] = "Le budget est de 100M€."  # type: ignore[index]
     llm    = _make_llm_call('["Question 1 ?", "Question 2 ?", "Question 3 ?"]')
-    result = generate_follow_up(state, llm_call=llm, config=config)
+    result = generate_follow_up(state, llm_call=llm, rag_config=config)
     assert len(result["follow_up_suggestions"]) <= 3
     assert "hidden_environment" in result
 
@@ -316,6 +317,6 @@ def test_generate_title(config):
     state  = create_unified_state("Politique budgétaire 2024 ?")
     state["answer"] = "Réponse longue sur la politique budgétaire."  # type: ignore[index]
     llm    = _make_llm_call("Politique budgétaire 2024")
-    result = generate_title(state, llm_call=llm, config=config)
+    result = generate_title(state, llm_call=llm, rag_config=config)
     assert result["conversation_title"] is not None
     assert len(result["conversation_title"]) <= 60

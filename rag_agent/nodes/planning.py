@@ -30,8 +30,9 @@ def _build_planning_prompt(
         "3. Chaque sous-requête doit être grammaticalement correcte et en français.\n"
         "4. Si la question est complexe, la décomposer en 2-3 aspects distincts. Sinon, générer 1 seule sous-requête.\n"
         "5. Si la question fait référence à quelque chose mentionné dans la conversation précédente, l'intégrer explicitement dans la sous-requête.\n"
-        "6. Si un ou plusieurs noms de fichiers sont explicitement mentionnés parmi les documents disponibles, indique-les dans \"targets\". Sinon [].\n"
-        "7. En cas de comparaison entre plusieurs documents, conserve-les tous dans \"targets\" et n'en choisis pas un seul arbitrairement.\n\n"
+        "6. Remplis \"targets\" UNIQUEMENT si un ou plusieurs noms de fichiers sont explicitement mentionnés dans la question utilisateur ou dans le contexte de conversation.\n"
+        "7. Ne devine jamais un document cible à partir du seul thème de la question ; si le nom du fichier n'est pas explicite, retourne [].\n"
+        "8. En cas de comparaison entre plusieurs documents, conserve-les tous dans \"targets\" et n'en choisis pas un seul arbitrairement.\n\n"
         "Réponds UNIQUEMENT en JSON (sans balise markdown) sous la forme :\n"
         '{\n'
         '  "targets": ["<nom_fichier_1>", "<nom_fichier_2>"],\n'
@@ -68,15 +69,15 @@ def _resolve_source_filters(
 
 
 def analyze_and_plan(state: UnifiedRAGState, *, llm_call: Callable, rag_config: RAGConfig) -> dict:
-    """Nœud 1 : décompose la question et identifie le filtre source."""
+    """Nœud 1 : décompose la question et suggère des documents cibles sans filtrage dur."""
     qid      = state["question_id"]
     log      = list(state.get("decision_log", []))
     question = state["question"]
     sources  = state.get("available_sources", [])
-    filter_  = state.get("source_filter")
+    manual_filter = state.get("manual_source_filter") or state.get("source_filter")
 
-    if filter_:
-        log.append(log_entry("analyze", f"Filtre manuel → {Path(filter_).name}", {"source": filter_}))
+    if manual_filter:
+        log.append(log_entry("analyze", f"Filtre manuel → {Path(manual_filter).name}", {"source": manual_filter}))
 
     conv_ctx = ""
     if state.get("conversation_summary"):
@@ -111,7 +112,6 @@ def analyze_and_plan(state: UnifiedRAGState, *, llm_call: Callable, rag_config: 
         log.append(log_entry("analyze", "Fallback : LLM indisponible, utilisation de la question brute"))
         return {
             "sub_queries":    [question],
-            "source_filter":  filter_,
             "reasoning":      "fallback: planning LLM unavailable",
             "current_branch": "plan",
             "decision_history": list(state.get("decision_history", [])) + ["plan.analyze"],
@@ -120,13 +120,12 @@ def analyze_and_plan(state: UnifiedRAGState, *, llm_call: Callable, rag_config: 
         }
 
     resolved_targets = _resolve_source_filters(parsed_output.targets, sources)
-    final_filter     = filter_ or (resolved_targets[0] if len(resolved_targets) == 1 else None)
 
     log.append(log_entry(
         "analyze",
-        f"Cibles : {parsed_output.targets or ['aucune']}. Requêtes : {parsed_output.sub_queries}",
+        f"Cibles suggérées : {parsed_output.targets or ['aucune']}. Requêtes : {parsed_output.sub_queries}",
         {
-            "target": final_filter,
+            "manual_filter": manual_filter,
             "targets": resolved_targets,
             "sub_queries": parsed_output.sub_queries,
             "reason": parsed_output.reason,
@@ -135,7 +134,6 @@ def analyze_and_plan(state: UnifiedRAGState, *, llm_call: Callable, rag_config: 
 
     return {
         "sub_queries":    parsed_output.sub_queries,
-        "source_filter":  final_filter,
         "target_sources": resolved_targets,
         "reasoning":      parsed_output.reason,
         "current_branch": "plan",

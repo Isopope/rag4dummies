@@ -15,6 +15,9 @@ from ..config import RAGConfig
 from ..state import UnifiedRAGState, log_entry, _seen_keys_contains, _seen_keys_add
 from ..tools.query import QueryTool, combine_chunks
 
+# Constante RRF standard
+_RRF_K: int = 60
+
 # ── Schéma des outils OpenAI (constant) ───────────────────────────────────────
 
 TOOLS_CFG: list[dict] = [
@@ -131,8 +134,9 @@ def _build_initial_prompt(state: UnifiedRAGState) -> str:
     if state.get("available_sources"):
         names        = [Path(s).name for s in state["available_sources"]]
         sources_info = f"Documents indexés: {', '.join(names)}."
-        if state.get("source_filter"):
-            sources_info += f" (Filtré sur {Path(state['source_filter']).name})"
+        manual_filter = state.get("manual_source_filter") or state.get("source_filter")
+        if manual_filter:
+            sources_info += f" (Filtre strict utilisateur: {Path(manual_filter).name})"
         elif state.get("target_sources"):
             target_names = [Path(s).name for s in state.get("target_sources", [])]
             if target_names:
@@ -256,7 +260,7 @@ def agent_action(
     all_docs       = list(state.get("all_docs", []))
     seen_keys      = list(state.get("seen_keys", []))
     seen_queries   = list(state.get("seen_queries", []))
-    filter_        = state.get("source_filter")
+    manual_filter  = state.get("manual_source_filter") or state.get("source_filter")
     target_sources = state.get("target_sources", [])
 
     model_content = messages[-1]
@@ -280,11 +284,11 @@ def agent_action(
         if fc_name == "search_documents":
             query                 = fc_args.get("query", "")
             requested_source_name = str(fc_args.get("source_name") or "").strip()
-            resolved_source       = (
-                filter_
-                or next((s for s in target_sources if Path(s).name.lower() == requested_source_name.lower()), None)
+            resolved_source = (
+                next((s for s in target_sources if Path(s).name.lower() == requested_source_name.lower()), None)
                 or next((s for s in state.get("available_sources", []) if Path(s).name.lower() == requested_source_name.lower()), None)
             )
+            requested_targets = [resolved_source] if resolved_source else list(target_sources)
             query_signature = f"{requested_source_name.lower()}::{query.lower().strip()}"
             is_dup          = any(q.lower().strip() == query_signature for q, _ in seen_queries)
             seen_queries.append((query_signature, 1.0))
@@ -293,6 +297,7 @@ def agent_action(
                 "query":                  query,
                 "requested_source_name":  requested_source_name,
                 "resolved_source":        resolved_source,
+                "requested_targets":      requested_targets,
                 "query_signature":        query_signature,
             })
 
@@ -309,7 +314,7 @@ def agent_action(
                 item["skip"]        = True
                 item["skip_result"] = {"error": f"Index invalide : {idx} (hors plage [{_IDX_MIN}, {_IDX_MAX}])"}
             else:
-                source_full = filter_ or next(
+                source_full = manual_filter or next(
                     (d["source"] for d in all_docs if Path(d.get("source", "")).name == src_name),
                     None,
                 )
@@ -331,7 +336,8 @@ def agent_action(
         try:
             chunks = query_tool.execute(
                 it["query"],
-                source_filter=it["resolved_source"],
+                manual_source_filter=manual_filter,
+                target_sources=it["requested_targets"],
                 top_k=rag_config.top_k_retrieve,
                 alpha=rag_config.hybrid_alpha,
             )
@@ -380,12 +386,29 @@ def agent_action(
                 merged      = out["chunks"]
                 new_count   = 0
                 chunks_info: list[dict] = []
-                for doc in merged:
+                for rank, doc in enumerate(merged):  # merged est trié par score wRRF décroissant
                     k = (doc.get("source", ""), int(doc.get("chunk_index", -1)))
+                    rrf_contribution = 1.0 / (_RRF_K + rank + 1)
                     if not _seen_keys_contains(seen_keys, k):
+                        # Nouveau chunk : initialisation du signal agentique
+                        doc["_accumulated_rrf"]  = rrf_contribution
+                        doc["_hit_count"]         = 1
+                        doc["_search_hit_count"]  = 1
+                        doc["_neighbor_bonus"]    = 0.0
+                        doc["_best_score"]        = doc.get("_score", 0.0)
                         all_docs.append(doc)
                         _seen_keys_add(seen_keys, k)
                         new_count += 1
+                    else:
+                        # Chunk déjà vu → accumulation du signal de rang (pas de skip silencieux)
+                        for existing in all_docs:
+                            ex_key = (existing.get("source", ""), int(existing.get("chunk_index", -1)))
+                            if ex_key == k:
+                                existing["_accumulated_rrf"] = existing.get("_accumulated_rrf", 0.0) + rrf_contribution
+                                existing["_hit_count"]        = existing.get("_hit_count", 1) + 1
+                                existing["_search_hit_count"] = existing.get("_search_hit_count", 1) + 1
+                                existing["_best_score"]       = max(existing.get("_best_score", 0.0), doc.get("_score", 0.0))
+                                break
                     chunks_info.append({
                         "chunk_index": doc.get("chunk_index"),
                         "source_name": Path(doc.get("source", "")).name,
@@ -397,15 +420,26 @@ def agent_action(
                     })
                 new_docs_total += new_count
                 result = {"found": len(merged), "new_chunks": new_count, "results": chunks_info[:10]}
+                # Log des chunks à fort signal agentique pour le monitoring UI
+                high_signal = sorted(
+                    all_docs,
+                    key=lambda d: d.get("_accumulated_rrf", 0.0) + d.get("_neighbor_bonus", 0.0),
+                    reverse=True,
+                )[:3]
+                top_info = [
+                    f"{Path(d.get('source', '')).name}[{d.get('chunk_index')}] hits={d.get('_hit_count', 1)}"
+                    for d in high_signal
+                ]
                 log.append(log_entry(
                     "agent.action",
                     f"Recherche '{item['query'][:50]}' sur {item['requested_source_name'] or 'toute la base'} → {len(merged)} hits ({new_count} nouveaux)",
                     {
                         "query":            item["query"],
                         "source_name":      item["requested_source_name"] or None,
-                        "resolved_source":  item["resolved_source"],
+                        "requested_targets": [Path(s).name for s in item["requested_targets"]],
                         "found":            len(merged),
                         "new":              new_count,
+                        "top_signal":       top_info,
                     },
                 ))
             else:
@@ -424,10 +458,23 @@ def agent_action(
                 if chunk:
                     k = (chunk.get("source", ""), int(chunk.get("chunk_index", -1)))
                     if not _seen_keys_contains(seen_keys, k):
-                        chunk["_expanded"] = True
+                        # Voisin : pas de signal de rang propre, bonus fixe conservateur
+                        chunk["_accumulated_rrf"]  = 0.0
+                        chunk["_hit_count"]         = 1
+                        chunk["_search_hit_count"]  = 0   # pas un hit search direct
+                        chunk["_neighbor_bonus"]    = 0.25 / (_RRF_K + 1)
+                        chunk["_best_score"]        = chunk.get("_score", 0.0)
+                        chunk["_expanded"]          = True
                         all_docs.append(chunk)
                         _seen_keys_add(seen_keys, k)
                         new_docs_total += 1
+                    else:
+                        # Voisin déjà présent comme chunk de recherche : bonus additionnel léger
+                        for existing in all_docs:
+                            ex_key = (existing.get("source", ""), int(existing.get("chunk_index", -1)))
+                            if ex_key == k:
+                                existing["_neighbor_bonus"] = existing.get("_neighbor_bonus", 0.0) + 0.1 / (_RRF_K + 1)
+                                break
                     result = {"found": True, "chunk": {"chunk_index": item["idx"], "content": chunk.get("page_content", "")}}
                     log.append(log_entry("agent.action", f"Voisin {item['src_name']} idx {item['idx']}"))
                 else:
@@ -478,7 +525,8 @@ def consolidate_chunks(
         try:
             docs = query_tool.execute(
                 state["question"],
-                source_filter=state.get("source_filter"),
+                manual_source_filter=state.get("manual_source_filter") or state.get("source_filter"),
+                target_sources=state.get("target_sources"),
                 top_k=rag_config.top_k_retrieve,
                 alpha=0.5,
             )
