@@ -191,6 +191,62 @@ def test_agent_action_invalid_chunk_index(config, mock_query_tool):
     assert "error" in tool_resp["content"].lower() or "invalide" in tool_resp["content"].lower()
 
 
+def test_agent_action_neighbor_tracks_seen_queries(config, mock_query_tool):
+    from rag_agent.nodes.reasoning import agent_action
+    import json
+
+    state = create_unified_state("Q ?", available_sources=["/docs/doc.pdf"])
+    state["messages"] = [  # type: ignore[index]
+        {"role": "user", "content": "Cherche."},
+        {
+            "role": "assistant",
+            "content": "Etends le contexte.",
+            "tool_calls": [{
+                "id": "c2",
+                "type": "function",
+                "function": {"name": "get_neighboring_chunk", "arguments": json.dumps({"source_name": "doc.pdf", "chunk_index": 4})},
+            }],
+        },
+    ]
+
+    with patch.object(
+        mock_query_tool,
+        "get_chunk_by_index",
+        return_value={"source": "/docs/doc.pdf", "chunk_index": 4, "page_content": "Voisin utile", "kind": "text", "title_path": "", "_score": 0.0},
+    ):
+        result = agent_action(state, query_tool=mock_query_tool, rag_config=config)
+
+    assert ("neighbor::/docs/doc.pdf::4", 1.0) in result["seen_queries"]
+    assert any(doc.get("chunk_index") == 4 for doc in result["all_docs"])
+
+
+def test_agent_action_duplicate_neighbor_skipped(config, mock_query_tool):
+    from rag_agent.nodes.reasoning import agent_action
+    import json
+
+    state = create_unified_state("Q ?", available_sources=["/docs/doc.pdf"])
+    state["seen_queries"] = [("neighbor::/docs/doc.pdf::4", 1.0)]  # type: ignore[index]
+    state["messages"] = [  # type: ignore[index]
+        {"role": "user", "content": "Cherche."},
+        {
+            "role": "assistant",
+            "content": "Etends le contexte.",
+            "tool_calls": [{
+                "id": "c2",
+                "type": "function",
+                "function": {"name": "get_neighboring_chunk", "arguments": json.dumps({"source_name": "doc.pdf", "chunk_index": 4})},
+            }],
+        },
+    ]
+
+    with patch.object(mock_query_tool, "get_chunk_by_index", wraps=mock_query_tool.get_chunk_by_index) as get_chunk:
+        result = agent_action(state, query_tool=mock_query_tool, rag_config=config)
+
+    tool_resp = result["messages"][-1]
+    assert "notice" in tool_resp["content"].lower() or "deja" in tool_resp["content"].lower()
+    get_chunk.assert_not_called()
+
+
 # ── Nœud : compress_context ───────────────────────────────────────────────────
 
 def test_compress_context_resets_messages(config):

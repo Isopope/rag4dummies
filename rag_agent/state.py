@@ -122,7 +122,8 @@ class UnifiedRAGState(TypedDict):
     Utiliser `_seen_keys_contains` / `_seen_keys_add` plutôt qu'accès direct."""
 
     seen_queries: list  # list[tuple[str, float]]
-    """Liste (query_text, weight) des recherches déjà exécutées. Évite les doublons."""
+    """Liste (signature, weight) des appels déjà exécutés.
+    Contient les signatures de recherche et les expansions voisines pour éviter les doublons."""
 
     agent_iterations: int
     """Nombre d'itérations ReAct complétées. Stop à max_agent_iter."""

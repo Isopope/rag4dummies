@@ -322,7 +322,23 @@ def agent_action(
                     (s for s in state.get("available_sources", []) if Path(s).name == src_name),
                     src_name,
                 )
-                item.update({"src_name": src_name, "idx": idx, "source_full": source_full})
+                neighbor_signature = f"neighbor::{str(source_full).lower().strip()}::{idx}"
+                is_dup             = any(q.lower().strip() == neighbor_signature for q, _ in seen_queries)
+                seen_queries.append((neighbor_signature, 1.0))
+                item.update({
+                    "src_name":           src_name,
+                    "idx":                idx,
+                    "source_full":        source_full,
+                    "neighbor_signature": neighbor_signature,
+                })
+
+                if is_dup:
+                    item["skip"] = True
+                    item["skip_result"] = {
+                        "found": False,
+                        "notice": "Expansion voisine deja effectuee pour ce chunk. Essaie un autre voisin ou reformule la recherche.",
+                    }
+                    log.append(log_entry("agent.action", f"Skip neighbor (duplicate): {src_name} idx {idx}"))
 
         else:
             item["skip"]        = True
