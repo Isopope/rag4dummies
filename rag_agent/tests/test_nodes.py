@@ -142,14 +142,14 @@ def test_agent_action_search_documents(config, mock_query_tool):
     result = agent_action(state, query_tool=mock_query_tool, rag_config=config)
     assert len(result["all_docs"]) > 0
     assert len(result["seen_keys"]) > 0
-    assert ("budget 2024", 1.0) in result["seen_queries"]
+    assert ("::budget 2024", 1.0) in result["seen_queries"]
 
 
 def test_agent_action_duplicate_query_skipped(config, mock_query_tool):
     from rag_agent.nodes.reasoning import agent_action
     import json
     state = create_unified_state("Q ?")
-    state["seen_queries"] = [("budget 2024", 1.0)]  # type: ignore[index]
+    state["seen_queries"] = [("::budget 2024", 1.0)]  # type: ignore[index]
     state["messages"] = [  # type: ignore[index]
         {"role": "user", "content": "Cherche."},
         {
@@ -165,6 +165,7 @@ def test_agent_action_duplicate_query_skipped(config, mock_query_tool):
     result = agent_action(state, query_tool=mock_query_tool, rag_config=config)
     # Aucun nouveau doc ajouté
     assert result["all_docs"] == []
+    assert result["seen_queries"] == [("::budget 2024", 1.0)]
     # Le message tool contient "notice"
     tool_resp = result["messages"][-1]
     assert "notice" in tool_resp["content"].lower() or "doublon" in tool_resp["content"].lower() or "déjà" in tool_resp["content"].lower()
@@ -243,6 +244,7 @@ def test_agent_action_duplicate_neighbor_skipped(config, mock_query_tool):
         result = agent_action(state, query_tool=mock_query_tool, rag_config=config)
 
     tool_resp = result["messages"][-1]
+    assert result["seen_queries"] == [("neighbor::/docs/doc.pdf::4", 1.0)]
     assert "notice" in tool_resp["content"].lower() or "deja" in tool_resp["content"].lower()
     get_chunk.assert_not_called()
 

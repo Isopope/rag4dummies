@@ -291,8 +291,6 @@ def agent_action(
             requested_targets = [resolved_source] if resolved_source else list(target_sources)
             query_signature = f"{requested_source_name.lower()}::{query.lower().strip()}"
             is_dup          = any(q.lower().strip() == query_signature for q, _ in seen_queries)
-            seen_queries.append((query_signature, 1.0))
-
             item.update({
                 "query":                  query,
                 "requested_source_name":  requested_source_name,
@@ -305,6 +303,8 @@ def agent_action(
                 item["skip"]        = True
                 item["skip_result"] = {"found": 0, "results": [], "notice": "Requête déjà effectuée, essaie une formulation différente."}
                 log.append(log_entry("agent.action", f"Skip query (duplicate): {query[:50]} / {requested_source_name or 'all'}"))
+            else:
+                seen_queries.append((query_signature, 1.0))
 
         elif fc_name == "get_neighboring_chunk":
             src_name = fc_args.get("source_name", "")
@@ -324,7 +324,6 @@ def agent_action(
                 )
                 neighbor_signature = f"neighbor::{str(source_full).lower().strip()}::{idx}"
                 is_dup             = any(q.lower().strip() == neighbor_signature for q, _ in seen_queries)
-                seen_queries.append((neighbor_signature, 1.0))
                 item.update({
                     "src_name":           src_name,
                     "idx":                idx,
@@ -339,6 +338,8 @@ def agent_action(
                         "notice": "Expansion voisine deja effectuee pour ce chunk. Essaie un autre voisin ou reformule la recherche.",
                     }
                     log.append(log_entry("agent.action", f"Skip neighbor (duplicate): {src_name} idx {idx}"))
+                else:
+                    seen_queries.append((neighbor_signature, 1.0))
 
         else:
             item["skip"]        = True
