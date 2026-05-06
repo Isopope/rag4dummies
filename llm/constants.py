@@ -17,7 +17,14 @@ class EmbedTextType(str, Enum):
 
 # Dictionary mapping provider names to lists of their supported/available models
 PROVIDER_MODELS: dict[str, list[str]] = {
-    "openai":  ["gpt-4.1", "gpt-4o", "gpt-4o-mini", "o3-mini"],
+    "openai":  [
+        "gpt-4.1",
+        "gpt-4.1-mini",
+        "gpt-4.1-nano",
+        "gpt-4o",
+        "gpt-4o-mini",
+        "o3-mini",
+    ],
     "mistral": ["mistral/mistral-large-latest", "mistral/mistral-small-latest", "mistral/open-mistral-7b"],
     "claude":  ["claude-opus-4-5", "claude-sonnet-4-5", "claude-haiku-4-5"],
     "ollama":  ["ollama/gemma4", "ollama/llama3.2", "ollama/mistral", "ollama/phi4"],

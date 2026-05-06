@@ -132,6 +132,7 @@ const Index = () => {
     if (!isChatView) return;
     if (conversationId) return;
     if (!sessionId) return;
+    loadedConversationIdRef.current = sessionId;
     navigate(`${VIEW_PATHS.chat}/${sessionId}`, { replace: true });
   }, [conversationId, isChatView, navigate, sessionId]);
 
