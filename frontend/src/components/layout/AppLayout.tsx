@@ -17,15 +17,17 @@ const AppLayout = ({ sidebar, children, activeView, onViewChange }: AppLayoutPro
   const navigate = useNavigate();
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [darkMode, setDarkMode] = useState(() => {
-    if (typeof window !== 'undefined') {
-      return document.documentElement.classList.contains('dark') ||
-        window.matchMedia('(prefers-color-scheme: dark)').matches;
-    }
-    return false;
+    if (typeof window === 'undefined') return false;
+    return document.documentElement.classList.contains('dark');
   });
 
   useEffect(() => {
     document.documentElement.classList.toggle('dark', darkMode);
+    try {
+      localStorage.setItem('go4ai-theme', darkMode ? 'dark' : 'light');
+    } catch (_) {
+      // localStorage unavailable (private mode)
+    }
   }, [darkMode]);
 
   const NavButton = ({
@@ -39,24 +41,40 @@ const AppLayout = ({ sidebar, children, activeView, onViewChange }: AppLayoutPro
     title: string;
     children: React.ReactNode;
   }) => (
-    <button
-      onClick={onClick}
-      className={cn(
-        'w-10 h-10 rounded-xl flex items-center justify-center transition-all duration-200',
-        active
-          ? 'bg-sidebar-accent text-sidebar-primary shadow-sm'
-          : 'text-sidebar-foreground hover:bg-sidebar-accent/40 hover:text-sidebar-accent-foreground',
+    <div className="relative flex items-center justify-center w-full">
+      {active && (
+        <span className="absolute left-0 h-5 w-[3px] rounded-full bg-accent transition-all" />
       )}
-      title={title}
-    >
-      {icon}
-    </button>
+      <button
+        onClick={onClick}
+        aria-label={title}
+        aria-current={active ? 'page' : undefined}
+        className={cn(
+          'w-10 h-10 rounded-xl flex items-center justify-center transition-all duration-200',
+          active
+            ? 'bg-sidebar-accent text-sidebar-primary shadow-sm'
+            : 'text-sidebar-foreground hover:bg-sidebar-accent/40 hover:text-sidebar-accent-foreground',
+        )}
+        title={title}
+      >
+        {icon}
+      </button>
+    </div>
   );
 
   return (
     <div className="flex h-screen overflow-hidden bg-background">
+      <a
+        href="#main-content"
+        className="sr-only focus:not-sr-only focus:fixed focus:top-3 focus:left-3 focus:z-50 focus:rounded-lg focus:bg-primary focus:px-4 focus:py-2 focus:text-sm focus:font-medium focus:text-primary-foreground focus:shadow-lg focus:outline-none"
+      >
+        Aller au contenu principal
+      </a>
       {/* ── Nav rail ────────────────────────────────────────────── */}
-      <div className="shrink-0 w-14 bg-sidebar flex flex-col items-center py-3 gap-1 border-r border-sidebar-border">
+      <nav
+        aria-label="Navigation principale"
+        className="shrink-0 w-14 bg-sidebar flex flex-col items-center py-3 gap-1 border-r border-sidebar-border"
+      >
         {/* Logo */}
         <div className="flex flex-col items-center mb-3">
           <img src="/go4aiLogo.png" alt="Go4AI" className="h-7 w-auto" />
@@ -86,6 +104,7 @@ const AppLayout = ({ sidebar, children, activeView, onViewChange }: AppLayoutPro
         {/* Dark mode toggle */}
         <button
           onClick={() => setDarkMode((d) => !d)}
+          aria-label={darkMode ? 'Activer le mode clair' : 'Activer le mode sombre'}
           className="w-10 h-10 rounded-xl flex items-center justify-center text-sidebar-foreground hover:bg-sidebar-accent/40 transition-colors"
           title={darkMode ? 'Mode clair' : 'Mode sombre'}
         >
@@ -95,6 +114,8 @@ const AppLayout = ({ sidebar, children, activeView, onViewChange }: AppLayoutPro
         {/* Sidebar toggle */}
         <button
           onClick={() => setSidebarOpen(!sidebarOpen)}
+          aria-label={sidebarOpen ? 'Masquer le panneau lateral' : 'Afficher le panneau lateral'}
+          aria-expanded={sidebarOpen}
           className="w-10 h-10 rounded-xl flex items-center justify-center text-sidebar-foreground hover:bg-sidebar-accent/40 transition-colors"
           title={sidebarOpen ? 'Masquer le panneau' : 'Afficher le panneau'}
         >
@@ -106,7 +127,7 @@ const AppLayout = ({ sidebar, children, activeView, onViewChange }: AppLayoutPro
           <div className="flex flex-col items-center gap-1 mt-1">
             {/* Avatar avec initiale */}
             <div
-              className="w-8 h-8 rounded-full bg-accent/20 flex items-center justify-center text-accent text-xs font-semibold cursor-default select-none"
+              className="w-8 h-8 rounded-xl bg-sidebar-accent border border-sidebar-border flex items-center justify-center text-sidebar-primary text-xs font-semibold cursor-default select-none"
               title={user?.email}
             >
               {user?.email?.[0]?.toUpperCase() ?? <UserCircle2 className="w-4 h-4" />}
@@ -114,6 +135,7 @@ const AppLayout = ({ sidebar, children, activeView, onViewChange }: AppLayoutPro
             {/* Bouton déconnexion */}
             <button
               onClick={() => { logout(); navigate('/chat', { replace: true }); }}
+              aria-label="Se deconnecter"
               className="w-10 h-9 rounded-xl flex items-center justify-center text-sidebar-foreground hover:bg-red-500/15 hover:text-red-400 transition-colors"
               title="Se déconnecter"
             >
@@ -124,13 +146,14 @@ const AppLayout = ({ sidebar, children, activeView, onViewChange }: AppLayoutPro
           /* Icône login quand non connecté */
           <button
             onClick={() => navigate('/login')}
+            aria-label="Se connecter"
             className="w-10 h-10 rounded-xl flex items-center justify-center text-sidebar-foreground hover:bg-sidebar-accent/40 transition-colors"
             title="Se connecter"
           >
             <UserCircle2 className="w-5 h-5" />
           </button>
         )}
-      </div>
+      </nav>
 
       {/* ── Sidebar : uniquement en vue chat ──────────────────── */}
       {activeView === 'chat' && (
@@ -147,7 +170,11 @@ const AppLayout = ({ sidebar, children, activeView, onViewChange }: AppLayoutPro
       )}
 
       {/* ── Main content ───────────────────────────────────────── */}
-      <div className="relative flex-1 flex flex-col min-w-0">
+      <div
+        id="main-content"
+        tabIndex={-1}
+        className="relative flex-1 flex flex-col min-w-0"
+      >
         {/* Topbar auth — flottant, visible uniquement quand non connecté */}
         {!isAuthenticated && (
           <div className="absolute top-3 right-4 z-20 flex items-center gap-2">

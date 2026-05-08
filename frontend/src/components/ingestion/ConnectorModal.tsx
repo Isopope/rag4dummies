@@ -27,11 +27,11 @@ function Select({
 }) {
   return (
     <div>
-      <label className="block text-xs font-medium text-muted-foreground mb-1">{label}</label>
+      <label className="block text-[10px] font-semibold uppercase tracking-[0.15em] text-muted-foreground mb-1">{label}</label>
       <select
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className="w-full px-3 py-2 text-sm border border-border rounded-lg bg-background focus:outline-none focus:ring-1 focus:ring-ring"
+        className="w-full px-3 py-2 text-sm border border-border rounded-xl bg-background focus:outline-none focus:ring-1 focus:ring-ring"
       >
         {options.map((o) => (
           <option key={o} value={o}>
@@ -62,7 +62,7 @@ function TextInput({
 }) {
   return (
     <div>
-      <label className="block text-xs font-medium text-muted-foreground mb-1">
+      <label className="block text-[10px] font-semibold uppercase tracking-[0.15em] text-muted-foreground mb-1">
         {label}
         {required && <span className="text-destructive ml-0.5">*</span>}
       </label>
@@ -72,7 +72,7 @@ function TextInput({
         placeholder={placeholder}
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className="w-full px-3 py-2 text-sm border border-border rounded-lg bg-background focus:outline-none focus:ring-1 focus:ring-ring"
+        className="w-full px-3 py-2 text-sm border border-border rounded-xl bg-background focus:outline-none focus:ring-1 focus:ring-ring"
       />
       {hint && <p className="mt-1 text-[11px] text-muted-foreground">{hint}</p>}
     </div>
@@ -118,11 +118,11 @@ function EntityFields({
   return (
     <div className="grid grid-cols-2 gap-3">
       <div>
-        <label className="block text-xs font-medium text-muted-foreground mb-1">Entité (propriétaire)</label>
+        <label className="block text-[10px] font-semibold uppercase tracking-[0.15em] text-muted-foreground mb-1">Entité (propriétaire)</label>
         <select
           value={entity}
           onChange={(e) => onEntityChange(e.target.value)}
-          className="w-full px-3 py-2 text-sm border border-border rounded-lg bg-background focus:outline-none focus:ring-1 focus:ring-ring"
+          className="w-full px-3 py-2 text-sm border border-border rounded-xl bg-background focus:outline-none focus:ring-1 focus:ring-ring"
         >
           <option value="">— Aucune —</option>
           {entities.map((e) => (
@@ -131,12 +131,12 @@ function EntityFields({
         </select>
       </div>
       <div>
-        <label className="block text-xs font-medium text-muted-foreground mb-1">Date d'expiration</label>
+        <label className="block text-[10px] font-semibold uppercase tracking-[0.15em] text-muted-foreground mb-1">Date d'expiration</label>
         <input
           type="date"
           value={validityDate}
           onChange={(e) => onValidityDateChange(e.target.value)}
-          className="w-full px-3 py-2 text-sm border border-border rounded-lg bg-background focus:outline-none focus:ring-1 focus:ring-ring"
+          className="w-full px-3 py-2 text-sm border border-border rounded-xl bg-background focus:outline-none focus:ring-1 focus:ring-ring"
         />
       </div>
     </div>
@@ -237,7 +237,7 @@ function WebForm({ onSubmit, isLoading }: { onSubmit: (b: CrawlBody) => void; is
   return (
     <form onSubmit={handleSubmit} className="flex flex-col gap-4">
       <div>
-        <label className="block text-xs font-medium text-muted-foreground mb-1">
+        <label className="block text-[10px] font-semibold uppercase tracking-[0.15em] text-muted-foreground mb-1">
           URLs à crawler <span className="text-destructive">*</span>
         </label>
         <textarea
@@ -246,7 +246,7 @@ function WebForm({ onSubmit, isLoading }: { onSubmit: (b: CrawlBody) => void; is
           placeholder={'https://docs.example.com/guide\nhttps://docs.example.com/api'}
           value={urlsText}
           onChange={(e) => setUrlsText(e.target.value)}
-          className="w-full px-3 py-2 text-sm border border-border rounded-lg bg-background focus:outline-none focus:ring-1 focus:ring-ring resize-none font-mono"
+          className="w-full px-3 py-2 text-sm border border-border rounded-xl bg-background focus:outline-none focus:ring-1 focus:ring-ring resize-none font-mono"
         />
         <p className="mt-1 text-[11px] text-muted-foreground">Une URL par ligne. Playwright sera utilisé pour le rendu.</p>
       </div>
@@ -400,7 +400,7 @@ function SubmitButton({ isLoading }: { isLoading: boolean }) {
     <button
       type="submit"
       disabled={isLoading}
-      className="flex items-center justify-center gap-2 w-full py-2.5 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:opacity-90 disabled:opacity-60 transition-opacity"
+      className="flex items-center justify-center gap-2 w-full py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-medium hover:opacity-90 disabled:opacity-60 transition-opacity"
     >
       {isLoading ? (
         <>
@@ -453,7 +453,7 @@ export default function ConnectorModal({ type, isLoading, onSubmit, onClose }: C
           <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center">
             <Icon className="w-4 h-4 text-primary" />
           </div>
-          <h2 className="text-base font-semibold text-card-foreground flex-1">
+          <h2 className="font-display text-lg font-medium text-card-foreground tracking-tight flex-1">
             Configurer — {meta.title}
           </h2>
           <button onClick={onClose} className="p-1 rounded-md hover:bg-muted transition-colors">

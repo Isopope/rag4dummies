@@ -18,7 +18,7 @@ export function PdfGroundingModal({ source, onClose }: PdfGroundingModalProps) {
         
         <div className="px-4 py-3 border-b border-border bg-muted/30 flex items-center gap-3">
           <div className="min-w-0 flex-1">
-            <h3 className="text-sm font-semibold text-foreground truncate">{source.title}</h3>
+            <h3 className="font-display text-sm font-medium text-foreground tracking-tight truncate">{source.title}</h3>
             {source.kind && (
               <p className="text-[10px] uppercase text-muted-foreground mt-0.5">{source.kind}</p>
             )}

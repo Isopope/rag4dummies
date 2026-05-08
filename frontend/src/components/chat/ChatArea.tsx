@@ -16,40 +16,57 @@ interface ChatAreaProps {
   onShowSources?: (message: ChatMessage) => void;
 }
 
-/* ── Random greetings (Onyx-inspired) ──────────────────────────────── */
+/* ── Greetings ──────────────────────────────────────────────────────── */
 const GREETINGS = [
-  'Bonjour ! Comment puis-je vous aider ?',
-  'Posez-moi une question sur vos documents.',
-  'Je suis prêt à explorer vos données.',
-  'Que souhaitez-vous découvrir aujourd\'hui ?',
+  'Bonjour, que puis-je éclairer pour vous ?',
+  'Vos documents, à portée de question.',
+  'Interrogez l\'intelligence de vos données.',
+  'Que souhaitez-vous explorer aujourd\'hui ?',
 ];
 
 const getGreeting = () => GREETINGS[Math.floor(Math.random() * GREETINGS.length)];
 
+const STAGGER = ['stagger-1', 'stagger-2', 'stagger-3'] as const;
+
 /* ── Welcome screen (0 messages) ───────────────────────────────────── */
 const WelcomeScreen = ({ greeting, onSelect }: { greeting: string; onSelect?: (s: string) => void }) => (
-  <div className="flex-1 flex items-center justify-center animate-fade-in">
-    <div className="flex flex-col items-center gap-6 max-w-lg text-center px-4">
-      {/* Go4AI logo */}
-      <img src="/go4aiLogo.png" alt="Go4AI" className="h-16 w-auto" />
+  <div className="flex-1 flex items-center justify-center relative overflow-hidden animate-fade-in">
+    {/* Atmospheric dot grid */}
+    <div className="absolute inset-0 welcome-dot-grid" />
+    <div className="absolute inset-0 bg-gradient-to-b from-background/20 via-background/70 to-background pointer-events-none" />
 
-      <div className="space-y-2">
-        <h2 className="text-2xl font-bold text-foreground">{greeting}</h2>
-        <p className="text-sm text-muted-foreground leading-relaxed">
-          Je réponds à vos questions à partir de vos documents indexés —
-          tableaux, graphiques et données structurées inclus.
+    <div className="relative z-10 flex flex-col items-center gap-8 max-w-xl text-center px-8">
+      {/* Brand mark */}
+      <div className="flex flex-col items-center gap-3">
+        <img src="/go4aiLogo.png" alt="Go4AI" className="h-14 w-auto" />
+        <div className="flex items-center gap-3">
+          <div className="w-6 h-px bg-accent/60" />
+          <span className="text-[10px] font-semibold uppercase tracking-[0.22em] text-muted-foreground">
+            Intelligence documentaire
+          </span>
+          <div className="w-6 h-px bg-accent/60" />
+        </div>
+      </div>
+
+      {/* Headline */}
+      <div className="space-y-3">
+        <h2 className="font-display text-4xl font-light tracking-tight text-foreground leading-[1.1]">
+          {greeting}
+        </h2>
+        <p className="text-sm text-muted-foreground leading-relaxed max-w-sm mx-auto">
+          Indexez, interrogez et analysez vos données internes avec précision.
         </p>
       </div>
 
-      {/* Starter suggestions */}
+      {/* Starter suggestions — staggered entrance */}
       {onSelect && (
-        <div className="flex flex-wrap justify-center gap-2 mt-1">
-          {['Résume le document principal', 'Quels sont les points clés ?', 'Compare les sources disponibles'].map(
-            (s) => (
+        <div className="flex flex-wrap justify-center gap-2.5">
+          {(['Résume le document principal', 'Quels sont les points clés ?', 'Compare les sources disponibles'] as const).map(
+            (s, i) => (
               <button
                 key={s}
                 onClick={() => onSelect(s)}
-                className="px-4 py-2 text-xs rounded-full border border-border bg-card hover:bg-secondary/60 text-foreground transition-colors font-medium shadow-sm"
+                className={`px-5 py-2 text-xs rounded-full border border-border/70 bg-card/80 backdrop-blur-sm hover:bg-accent hover:text-accent-foreground hover:border-accent text-foreground transition-all duration-200 font-medium shadow-sm animate-fade-in ${STAGGER[i]}`}
               >
                 {s}
               </button>

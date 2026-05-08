@@ -3,15 +3,12 @@ import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/context/AuthContext';
 import { toast } from 'sonner';
 
-const BRAND_BLUE   = '#384596';
-const BRAND_ORANGE = '#F45A00';
-
 export default function Login() {
-  const [email, setEmail]       = useState('');
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [loading, setLoading]   = useState(false);
-  const { login }               = useAuth();
-  const navigate                = useNavigate();
+  const [loading, setLoading] = useState(false);
+  const { login } = useAuth();
+  const navigate = useNavigate();
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
@@ -28,55 +25,90 @@ export default function Login() {
 
   return (
     <div className="min-h-screen flex">
-      {/* ── Panneau gauche — branding ──────────────────────────── */}
+      {/* ── Left panel — branding ─────────────────────────────────── */}
       <div
-        className="hidden lg:flex flex-col justify-between w-[45%] px-16 py-14"
-        style={{ background: `linear-gradient(150deg, ${BRAND_BLUE} 0%, #1f2d72 100%)` }}
+        className="hidden lg:flex flex-col justify-between w-[45%] px-16 py-14 relative overflow-hidden"
+        style={{ background: 'linear-gradient(150deg, hsl(234 68% 20%) 0%, hsl(235 72% 10%) 100%)' }}
       >
-        {/* Logo Go4AI */}
-        <div>
-          <img src="/go4aiLogo.png" alt="Go4AI" className="h-10 w-auto" />
-          <p className="text-white/50 text-sm mt-2 tracking-wide">Gouvernance 4 AI</p>
+        {/* Subtle dot grid texture */}
+        <div
+          className="absolute inset-0 pointer-events-none"
+          style={{
+            backgroundImage: 'radial-gradient(circle, rgba(255,255,255,0.035) 1px, transparent 1px)',
+            backgroundSize: '28px 28px',
+          }}
+        />
+
+        {/* Logo */}
+        <div className="relative z-10">
+          <img src="/go4aiLogo.png" alt="Go4AI" className="h-9 w-auto" />
+          <p className="text-white/35 text-xs mt-2 tracking-[0.18em] uppercase font-medium">Gouvernance 4 AI</p>
         </div>
 
-        {/* Tagline centrale */}
-        <div className="space-y-5">
-          <p className="text-white/20 text-xs uppercase tracking-[0.2em] font-semibold">Plateforme RAG</p>
-          <h2 className="text-white text-4xl font-extrabold leading-tight">
-            Exploitez
-            <br />
-            l’intelligence
-            <br />
-            de vos documents.
+        {/* Central content */}
+        <div className="relative z-10 space-y-8">
+          <p className="text-white/25 text-[10px] uppercase tracking-[0.28em] font-semibold">Plateforme RAG souveraine</p>
+
+          <h2 className="font-display font-light text-white text-5xl leading-[1.05] tracking-tight">
+            Exploitez<br />
+            l'intelligence<br />
+            <em className="not-italic" style={{ color: 'hsl(20, 96%, 58%)' }}>de vos</em><br />
+            documents.
           </h2>
-          <p className="text-white/50 text-sm leading-relaxed max-w-xs">
+
+          {/* Document stack illustration */}
+          <svg viewBox="0 0 280 180" fill="none" className="w-64 opacity-90" aria-hidden="true">
+            <g transform="rotate(-10 140 90)">
+              <rect x="40" y="10" width="140" height="180" rx="6" fill="white" fillOpacity="0.02" stroke="white" strokeOpacity="0.06"/>
+            </g>
+            <g transform="rotate(-4 140 90)">
+              <rect x="40" y="10" width="140" height="180" rx="6" fill="white" fillOpacity="0.03" stroke="white" strokeOpacity="0.09"/>
+            </g>
+            <rect x="40" y="10" width="140" height="180" rx="6" fill="white" fillOpacity="0.05" stroke="white" strokeOpacity="0.14"/>
+            <line x1="60" y1="44" x2="160" y2="44" stroke="white" strokeOpacity="0.14" strokeWidth="1"/>
+            <line x1="60" y1="60" x2="148" y2="60" stroke="white" strokeOpacity="0.09" strokeWidth="1"/>
+            <line x1="60" y1="76" x2="155" y2="76" stroke="white" strokeOpacity="0.07" strokeWidth="1"/>
+            <line x1="60" y1="92" x2="130" y2="92" stroke="white" strokeOpacity="0.07" strokeWidth="1"/>
+            <circle cx="60" cy="44" r="2.5" fill="hsl(20,96%,58%)" fillOpacity="0.9"/>
+            <circle cx="222" cy="50" r="32" fill="none" stroke="white" strokeOpacity="0.06"/>
+            <circle cx="222" cy="50" r="16" fill="none" stroke="white" strokeOpacity="0.09"/>
+            <circle cx="222" cy="50" r="4" fill="white" fillOpacity="0.25"/>
+            <line x1="62" y1="42" x2="218" y2="50" stroke="white" strokeOpacity="0.06" strokeWidth="0.5" strokeDasharray="4 3"/>
+          </svg>
+
+          <p className="text-white/35 text-sm leading-relaxed max-w-[260px]">
             Indexez, interrogez et analysez vos données internes avec un assistant IA souverain.
           </p>
         </div>
 
-        {/* Footer Aghadoe */}
-        <div className="flex items-center gap-3">
-          <img src="/aghadoeLogo.png" alt="Aghadoe" className="h-6 w-auto opacity-50" />
-          <p className="text-white/25 text-xs">© 2026 Aghadoe — Tous droits réservés</p>
+        {/* Footer */}
+        <div className="relative z-10 flex items-center gap-3">
+          <img src="/aghadoeLogo.png" alt="Aghadoe" className="h-5 w-auto opacity-30" />
+          <p className="text-white/20 text-xs">© 2026 Aghadoe — Tous droits réservés</p>
         </div>
       </div>
 
-      {/* ── Panneau droit — formulaire ────────────────────────── */}
+      {/* ── Right panel — form ────────────────────────────────────── */}
       <div className="flex-1 flex items-center justify-center bg-background px-8">
-        <div className="w-full max-w-sm space-y-8">
-          {/* Logo mobile */}
+        <div className="w-full max-w-sm space-y-10">
+          {/* Mobile logo */}
           <div className="lg:hidden flex justify-center">
             <img src="/go4aiLogo.png" alt="Go4AI" className="h-10 w-auto" />
           </div>
 
+          {/* Heading */}
           <div>
-            <h1 className="text-2xl font-bold text-foreground">Connexion</h1>
-            <p className="text-sm text-muted-foreground mt-1">Accédez à votre espace documentaire</p>
+            <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-muted-foreground mb-2">Accès sécurisé</p>
+            <h1 className="font-display text-4xl font-light text-foreground tracking-tight">Connexion</h1>
+            <p className="text-sm text-muted-foreground mt-1.5">Accédez à votre espace documentaire</p>
           </div>
 
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div className="space-y-1.5">
-              <label className="text-sm font-medium text-foreground" htmlFor="email">Email</label>
+          {/* Form */}
+          <form onSubmit={handleSubmit} className="space-y-7">
+            <div className="space-y-1">
+              <label className="text-[10px] font-semibold uppercase tracking-[0.15em] text-muted-foreground" htmlFor="email">
+                Adresse e-mail
+              </label>
               <input
                 id="email"
                 type="email"
@@ -84,13 +116,15 @@ export default function Login() {
                 required
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                className="w-full px-3 py-2.5 rounded-lg border border-border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                className="w-full py-2.5 bg-transparent border-0 border-b-2 border-border text-sm focus:outline-none focus:border-primary transition-colors placeholder:text-muted-foreground/40"
                 placeholder="vous@exemple.com"
               />
             </div>
 
-            <div className="space-y-1.5">
-              <label className="text-sm font-medium text-foreground" htmlFor="password">Mot de passe</label>
+            <div className="space-y-1">
+              <label className="text-[10px] font-semibold uppercase tracking-[0.15em] text-muted-foreground" htmlFor="password">
+                Mot de passe
+              </label>
               <input
                 id="password"
                 type="password"
@@ -98,7 +132,7 @@ export default function Login() {
                 required
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                className="w-full px-3 py-2.5 rounded-lg border border-border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                className="w-full py-2.5 bg-transparent border-0 border-b-2 border-border text-sm focus:outline-none focus:border-primary transition-colors placeholder:text-muted-foreground/40"
                 placeholder="••••••••"
               />
             </div>
@@ -106,16 +140,17 @@ export default function Login() {
             <button
               type="submit"
               disabled={loading}
-              className="w-full py-2.5 px-4 rounded-lg text-sm font-semibold text-white transition-opacity disabled:opacity-50"
-              style={{ background: `linear-gradient(90deg, ${BRAND_BLUE} 0%, #4a5cb8 100%)` }}
+              className="w-full py-3 px-4 rounded-xl text-sm font-semibold text-white bg-primary hover:opacity-90 transition-opacity disabled:opacity-50 shadow-sm"
             >
-              {loading ? 'Connexion...' : 'Se connecter'}
+              {loading ? 'Connexion…' : 'Se connecter'}
             </button>
           </form>
 
           <p className="text-center text-xs text-muted-foreground">
             Pas encore de compte ?{' '}
-            <Link to="/register" className="font-semibold" style={{ color: BRAND_ORANGE }}>Créer un compte</Link>
+            <Link to="/register" className="font-semibold text-accent hover:opacity-75 transition-opacity">
+              Créer un compte
+            </Link>
           </p>
         </div>
       </div>
