@@ -1,7 +1,7 @@
 """Constructeur du graphe LangGraph unifié et classe RAGAgent.
 
 Interface publique compatible avec rag_pipeline.RAGAgent :
-  - RAGAgent(weaviate_store, openai_key, cohere_key, ...)
+  - RAGAgent(weaviate_store, openai_key, reranker_url, ...)
   - agent.stream_query(question, source, conversation_summary) → generator
   - agent.query(question, source) → dict
 """
@@ -13,13 +13,13 @@ from typing import Any, Optional
 from loguru import logger
 
 
-def build_unified_graph(config, weaviate_store, cohere_client=None):
+def build_unified_graph(config, weaviate_store, reranker_url=None):
     """Compile et retourne le graphe LangGraph RAG unifié.
 
     Args:
         config:          RAGConfig — paramétrage complet du pipeline.
         weaviate_store:  Instance WeaviateStore (None → mode mock).
-        cohere_client:   Client Cohere (None → fallback LLM reranking).
+        reranker_url:    URL de l'API de Reranking (None → fallback LLM reranking).
     """
     from functools import partial
 
@@ -58,7 +58,7 @@ def build_unified_graph(config, weaviate_store, cohere_client=None):
     _action     = partial(agent_action,        query_tool=query_tool, rag_config=config, weaviate_store=weaviate_store)
     _compress   = partial(compress_context,    llm_call=llm_call,    rag_config=config)
     _consolidate= partial(consolidate_chunks,  query_tool=query_tool, rag_config=config)
-    _rerank     = partial(rerank,              llm_call=llm_call,    cohere_client=cohere_client, rag_config=config)
+    _rerank     = partial(rerank,              llm_call=llm_call,    reranker_url=reranker_url, rag_config=config)
     _generate   = partial(generate,            llm_call=llm_call,    rag_config=config)
     _follow_up  = partial(generate_follow_up,  llm_call=llm_call,    rag_config=config)
     _title      = partial(generate_title,      llm_call=llm_call,    rag_config=config)
@@ -105,7 +105,7 @@ class RAGAgent:
     """Agent RAG unifié — interface compatible avec rag_pipeline.RAGAgent.
 
     Usage :
-        agent = RAGAgent(weaviate_store, openai_key, cohere_key)
+        agent = RAGAgent(weaviate_store, openai_key, reranker_url)
         for event in agent.stream_query(question):
             ...
         result = agent.query(question)
@@ -115,7 +115,7 @@ class RAGAgent:
         self,
         weaviate_store,
         openai_key: str,
-        cohere_key: Optional[str] = None,
+        reranker_url: Optional[str] = "http://localhost:7997/v1/rerank",
         *,
         embedding_model: str = "text-embedding-3-small",
         llm_model: str = "gpt-4.1",
@@ -133,7 +133,7 @@ class RAGAgent:
             openai_key      = openai_key,
             llm_model       = llm_model,
             embedding_model = embedding_model,
-            cohere_key      = cohere_key,
+            reranker_url    = reranker_url,
             top_k_retrieve  = top_k_retrieve,
             top_k_final     = top_k_final,
             hybrid_alpha    = hybrid_alpha,
@@ -144,8 +144,7 @@ class RAGAgent:
         )
         self._store = weaviate_store
 
-        cohere_client = _init_cohere(cohere_key)
-        self._graph = build_unified_graph(self._config, weaviate_store, cohere_client)
+        self._graph = build_unified_graph(self._config, weaviate_store, reranker_url)
 
     # ── API publique ───────────────────────────────────────────────────────────
 
@@ -225,19 +224,3 @@ class RAGAgent:
             "follow_up_suggestions": final.get("follow_up_suggestions", []),
             "conversation_title":   final.get("conversation_title"),
         }
-
-
-# ── Helpers privés ─────────────────────────────────────────────────────────────
-
-def _init_cohere(cohere_key: Optional[str]) -> Optional[Any]:
-    """Initialise le client Cohere si la clé est disponible."""
-    if not cohere_key:
-        return None
-    try:
-        import cohere
-        client = cohere.Client(api_key=cohere_key)
-        logger.info("Cohere Rerank activé")
-        return client
-    except ImportError:
-        logger.warning("Package 'cohere' non installé — fallback reranking LLM")
-        return None

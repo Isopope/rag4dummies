@@ -14,6 +14,7 @@ class QueryRequest(BaseModel):
     conversation_summary: str = Field("", description="Résumé des tours précédents")
     session_id: Optional[str] = Field(None, description="UUID de la session en cours (None = nouvelle session)")
     model: Optional[str] = Field(None, description="Identifiant LiteLLM du modèle (ex: gpt-4o, mistral/mistral-large-latest). Si absent, utilise le modèle par défaut du serveur.")
+    engine_id: Optional[str] = Field(None, description="Moteur agentique à utiliser pour cette requête")
 
 
 # ── Modèles de données ─────────────────────────────────────────────────────────
@@ -79,6 +80,7 @@ class QueryResponse(BaseModel):
     question_id: str
     question: str
     answer: str
+    engine_id: Optional[str] = None
     sources: list[ChunkModel] = []
     follow_up_suggestions: list[str] = []
     conversation_title: Optional[str] = None
@@ -94,6 +96,7 @@ class StreamEvent(BaseModel):
     node: Optional[str] = None
     message: Optional[str] = None
     answer: Optional[str] = None
+    engine_id: Optional[str] = None
     sources: list[ChunkModel] = []
     follow_up_suggestions: list[str] = []
     conversation_title: Optional[str] = None
@@ -278,3 +281,112 @@ class SessionDetail(BaseModel):
 
 class RenameSessionRequest(BaseModel):
     title: str = Field(..., min_length=1, max_length=200)
+
+
+# ── Observabilité ───────────────────────────────────────────────────────────────
+
+class TraceEventItem(BaseModel):
+    ts: str
+    type: str
+    node: Optional[str] = None
+    message: Optional[str] = None
+    engine_id: Optional[str] = None
+
+
+class TraceItem(BaseModel):
+    trace_id: str
+    question_id: Optional[str] = None
+    question: str
+    mode: str
+    engine_id: str
+    model: Optional[str] = None
+    session_id: Optional[str] = None
+    user_id: str
+    started_at: str
+    completed_at: str
+    duration_ms: int = 0
+    stop_reason: Optional[str] = None
+    iterations: int = 0
+    n_retrieved: int = 0
+    event_count: int = 0
+    error: Optional[str] = None
+
+
+class TraceDetail(TraceItem):
+    source_filter: Optional[str] = None
+    conversation_summary: str = ""
+    source_paths: list[str] = []
+    follow_up_suggestions: list[str] = []
+    conversation_title: Optional[str] = None
+    usage: Optional[TokenUsageSummary] = None
+    answer_preview: str = ""
+    decision_log: list[dict[str, Any]] = []
+    events: list[TraceEventItem] = []
+    metadata: dict[str, Any] = {}
+
+
+class TraceBreakdownByEngine(BaseModel):
+    engine_id: str
+    count: int
+    errors: int
+    avg_duration_ms: float
+
+
+class TraceBreakdownByMode(BaseModel):
+    mode: str
+    count: int
+    errors: int
+    avg_duration_ms: float
+
+
+class TraceSummaryResponse(BaseModel):
+    total_traces: int
+    error_count: int
+    avg_duration_ms: float
+    avg_iterations: float
+    by_engine: list[TraceBreakdownByEngine] = []
+    by_mode: list[TraceBreakdownByMode] = []
+    stop_reasons: dict[str, int] = {}
+
+
+# ── Evaluation ─────────────────────────────────────────────────────────────────
+
+class EvalCompareRequest(BaseModel):
+    question: str = Field(..., min_length=1, max_length=4000)
+    source_filter: Optional[str] = None
+    conversation_summary: str = ""
+    session_id: Optional[str] = None
+    user_id: str = "eval"
+    model: Optional[str] = None
+    engines: list[str] = Field(default_factory=list, min_length=1)
+    expected_answer: Optional[str] = None
+    expected_sources: list[str] = Field(default_factory=list)
+    debug: bool = False
+
+
+class EvalEngineResult(BaseModel):
+    engine_id: str
+    trace_id: str
+    answer: str
+    error: Optional[str] = None
+    duration_ms: int
+    iterations: int = 0
+    stop_reason: Optional[str] = None
+    n_retrieved: int = 0
+    source_paths: list[str] = []
+    usage: Optional[TokenUsageSummary] = None
+    answer_overlap_score: Optional[float] = None
+    source_recall_score: Optional[float] = None
+    citation_precision_score: Optional[float] = None
+
+
+class EvalCompareResponse(BaseModel):
+    eval_id: str
+    created_at: str
+    question: str
+    model: Optional[str] = None
+    engines: list[str] = []
+    expected_answer: Optional[str] = None
+    expected_sources: list[str] = []
+    results: list[EvalEngineResult] = []
+    best_engine: Optional[str] = None

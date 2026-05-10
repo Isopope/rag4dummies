@@ -1,9 +1,9 @@
-"""Nœuds rerank — Cohere + fallback LLM + fusion wRRF agentique.
+"""Nœuds rerank — API externe + fallback LLM + fusion wRRF agentique.
 
 Architecture du reranking :
   Liste A : retrieved_docs triés par _accumulated_rrf + _neighbor_bonus
             (signal agentique : chunks retrouvés souvent par la boucle ReAct)
-  Liste B : sortie de _cohere_rerank ou _llm_rerank
+  Liste B : sortie de _api_rerank ou _llm_rerank
             (signal de pertinence froide)
   Fusion  : weighted_rrf([A, B], [1.0, 1.2])
             Le reranker est légèrement favorisé pour les cas simples,
@@ -25,27 +25,37 @@ from ..state import UnifiedRAGState, log_entry
 from ..tools.query import weighted_rrf
 
 
-def _cohere_rerank(
+def _api_rerank(
     docs: list[dict],
     question: str,
-    cohere_client: Any,
+    reranker_url: str,
 ) -> list[dict]:
-    """Reranking Cohere rerank-multilingual-v3.0.
+    """Reranking générique via API (ex: serveur Infinity hébergeant BAAI/bge-reranker-v2-m3).
 
-    Retourne tous les docs triés par _rerank_score décroissant
-    (sans troncature — la troncature finale est gérée par la fusion wRRF).
+    Compatible avec l'API Cohere / Infinity.
     """
+    import requests
+
     docs_texts = [(doc.get("page_content") or "")[:2048] for doc in docs]
-    response   = cohere_client.rerank(
-        query=question,
-        documents=docs_texts,
-        model="rerank-multilingual-v3.0",
-        top_n=len(docs),
-        return_documents=False,
-    )
+    payload = {
+        "query": question,
+        "documents": docs_texts,
+        # Optionnel pour Infinity si c'est le seul modèle chargé
+        "model": "BAAI/bge-reranker-v2-m3",
+        "top_n": len(docs),
+        "return_documents": False
+    }
+
+    response = requests.post(reranker_url, json=payload, timeout=10.0)
+    response.raise_for_status()
+    results = response.json().get("results", [])
+
     scored = [{**doc} for doc in docs]
-    for result in response.results:
-        scored[result.index]["_rerank_score"] = result.relevance_score
+    for result in results:
+        idx = result.get("index")
+        if idx is not None and idx < len(scored):
+            scored[idx]["_rerank_score"] = result.get("relevance_score", 0.0)
+
     return sorted(scored, key=lambda d: float(d.get("_rerank_score", 0.0)), reverse=True)
 
 
@@ -127,17 +137,23 @@ def rerank(
     state: UnifiedRAGState,
     *,
     llm_call: Callable,
-    cohere_client: Optional[Any],
-    rag_config: RAGConfig,
+    reranker_url: Optional[str] = None,
+    cohere_client: Any | None = None,
+    rag_config: RAGConfig | None = None,
+    config: RAGConfig | None = None,
 ) -> dict:
-    """Nœud 4 : reranking avec fusion wRRF (signal agentique + signal pertinence froide).
+    """Nœud 4 : reranking API (Infinity/BGE) ou fallback LLM avec fusion wRRF.
 
     Deux listes indépendantes sont construites puis fusionnées :
       Liste A : triée par _accumulated_rrf + _neighbor_bonus  (signal récurrence agent)
-      Liste B : sortie Cohere ou LLM                          (signal pertinence froide)
+      Liste B : sortie API ou LLM                             (signal pertinence froide)
     weighted_rrf([A, B], [1.0, 1.2]) — le reranker est légèrement favorisé,
     mais la Liste A compense pour les chunks retrouvés plusieurs fois.
     """
+    rag_config = rag_config or config
+    if rag_config is None:
+        raise TypeError("rerank requires 'rag_config' or backward-compatible 'config'")
+    _ = cohere_client  # Ancien paramètre conservé pour compatibilité des tests/appels legacy.
     qid      = state["question_id"]
     docs     = state.get("retrieved_docs", [])
     question = state["question"]
@@ -158,19 +174,19 @@ def rerank(
     # ── Liste B : signal de pertinence froide (Cohere ou LLM) ─────────────────
     list_b: list[dict] = []
 
-    if rag_config.use_cohere_rerank and cohere_client is not None:
+    if reranker_url:
         try:
-            list_b = _cohere_rerank(docs, question, cohere_client)
+            list_b = _api_rerank(docs, question, reranker_url)
             log.append(log_entry(
-                "rerank.cohere",
-                f"Cohere Rerank : {len(docs)} docs scorés (Liste B)",
+                "rerank.api",
+                f"API Rerank : {len(docs)} docs scorés (Liste B)",
                 {"n_input": len(docs)},
             ))
         except Exception as exc:
-            logger.warning("[{}] Cohere Rerank échoué, fallback LLM : {}", qid, exc)
+            logger.warning("[{}] API Rerank échoué, fallback LLM : {}", qid, exc)
             log.append(log_entry(
-                "rerank.cohere",
-                f"Cohere Rerank échoué : {exc} — fallback LLM",
+                "rerank.api",
+                f"API Rerank échoué : {exc} — fallback LLM",
                 {"error": str(exc)},
             ))
 

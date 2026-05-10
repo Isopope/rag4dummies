@@ -5,6 +5,7 @@ import os
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
+from application import IngestionService
 from ..auth import current_admin_user
 from db.models.user import User
 
@@ -73,42 +74,16 @@ async def ingest_pdf(
     _check_extension(filename, {".pdf"})
     content = await file.read()
     _check_file_size(content, filename)
-
-    object_key = DocumentStore.make_object_key(filename, content)
-
-    # 1. Upload dans l'object store
-    doc_store.upload(content, object_key, content_type="application/pdf")
-
-    # 2. Dispatcher la tâche Celery
-    from worker.queues import INGEST_QUEUE, RagCeleryPriority
-    celery = get_celery_app()
-    job = celery.send_task(
-        "rag.tasks.ingest_pdf",
-        args     = [object_key, parser, strategy, filename],
-        kwargs   = {"entity": entity, "validity_date": validity_date},
-        queue    = INGEST_QUEUE,
-        priority = int(RagCeleryPriority.HIGH),
+    service = IngestionService(db, doc_store, get_celery_app())
+    payload = await service.submit_pdf(
+        filename=filename,
+        content=content,
+        parser=parser,
+        strategy=strategy,
+        entity=entity,
+        validity_date=validity_date,
     )
-
-    # 3. Enregistrer en DB (PENDING, task_id)
-    from db.repositories.document import DocumentRepository
-    repo = DocumentRepository(db)
-    await repo.upsert(object_key, parser=parser, strategy=strategy, task_id=job.id,
-                      entity=entity, validity_date=validity_date)
-    await db.commit()
-
-    # 4. URL présignée immédiate (disponible dès l'upload)
-    expires  = int(os.getenv("MINIO_PRESIGN_EXPIRES", "3600"))
-    pdf_url  = doc_store.presigned_url(object_key, expires_seconds=expires)
-
-    logger.info("PDF '{}' dispatché — task_id={}", filename, job.id)
-    return IngestJobResponse(
-        task_id  = job.id,
-        status   = "pending",
-        source   = object_key,
-        filename = filename,
-        pdf_url  = pdf_url,
-    )
+    return IngestJobResponse(**payload)
 
 
 # ── POST /ingest/jsonl ─────────────────────────────────────────────────────────
@@ -131,32 +106,13 @@ async def ingest_jsonl(
     _check_extension(filename, {".jsonl"})
     content = await file.read()
     _check_file_size(content, filename)
-
-    object_key       = DocumentStore.make_object_key(filename, content)
     effective_source = source_override.strip() or None
-
-    doc_store.upload(content, object_key, content_type="application/x-ndjson")
-
-    from worker.queues import INGEST_QUEUE, RagCeleryPriority
-    celery = get_celery_app()
-    job = celery.send_task(
-        "rag.tasks.ingest_jsonl",
-        args     = [object_key, effective_source, filename],
-        queue    = INGEST_QUEUE,
-        priority = int(RagCeleryPriority.HIGH),
+    service = IngestionService(db, doc_store, get_celery_app())
+    payload = await service.submit_jsonl(
+        filename=filename,
+        content=content,
+        source_override=effective_source,
     )
-
-    from db.repositories.document import DocumentRepository
-    repo = DocumentRepository(db)
-    await repo.upsert(object_key, task_id=job.id)
-    await db.commit()
-
-    logger.info("JSONL '{}' dispatché — task_id={}", filename, job.id)
-    return IngestJobResponse(
-        task_id  = job.id,
-        status   = "pending",
-        source   = object_key,
-        filename = filename,
-    )
+    return IngestJobResponse(**payload)
 
 

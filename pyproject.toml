@@ -5,4 +5,4 @@ description = "RAG Agent POC"
 requires-python = ">=3.10"
 
 [tool.setuptools.packages.find]
-include = ["llm*", "rag_agent*", "api*", "db*", "worker*"]
+include = ["agent_runtime*", "application*", "core*", "evaluation*", "llm*", "rag_agent*", "api*", "db*", "storage*", "worker*"]

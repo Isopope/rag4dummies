@@ -15,11 +15,11 @@ from typing import Callable
 
 from loguru import logger
 
-# ── embedding helper (OpenAI) ────────────────────────────────────────────────
+# ── embedding helper (Modèle d'embedding) ────────────────────────────────────────────────
 
 def _embed_texts(
     texts: list[str],
-    openai_key: str,
+    api_key: str,
     model: str,
     batch_size: int = 2048,
     progress_cb: Callable[[str], None] | None = None,
@@ -33,7 +33,7 @@ def _embed_texts(
 
     embedder = EmbeddingModel(
         model=model,
-        api_key=openai_key,
+        api_key=api_key,
         # Timeout will use default, batch size is handled inside EmbeddingModel automatically
     )
     
@@ -50,7 +50,7 @@ def _ingest_with_openingestion(
     source: str,
     parser: str,
     strategy: str,
-    openai_key: str,
+    api_key: str,
     embedding_model: str,
     progress_cb: Callable[[str], None],
 ) -> tuple[list[dict], list[list[float]]]:
@@ -109,9 +109,18 @@ def _ingest_with_openingestion(
             "bboxes_json":   _json.dumps(c.position_int or [], ensure_ascii=False),
         })
 
-    texts = [d["page_content"] for d in chunk_dicts]
-    progress_cb("Embedding des chunks (OpenAI)…")
-    vectors = _embed_texts(texts, openai_key, embedding_model, progress_cb=progress_cb)
+    # Stratégie Onyx : Enrichissement invisible du texte envoyé à l'embedder
+    texts = []
+    for d in chunk_dicts:
+        # On préfixe le titre de la section pour donner un maximum de contexte au vecteur
+        title_prefix = f"Titre de la section : {d['title_path']}\n\n" if d.get("title_path") else ""
+        
+        # Si vous générez plus tard un "doc_summary" ou "chunk_context", concaténez-le ici a partir du contextual rag de openingestion !
+        enriched_text = f"{title_prefix}{d['page_content']}"
+        texts.append(enriched_text)
+
+    progress_cb("Embedding des chunks (Modèle d'embedding)…")
+    vectors = _embed_texts(texts, api_key, embedding_model, progress_cb=progress_cb)
 
     return chunk_dicts, vectors
 
@@ -121,7 +130,7 @@ def _ingest_with_openingestion(
 def _ingest_simple(
     pdf_path: Path,
     source: str,
-    openai_key: str,
+    api_key: str,
     embedding_model: str,
     chunk_size: int = 800,
     progress_cb: Callable[[str], None] | None = None,
@@ -174,8 +183,8 @@ def _ingest_simple(
 
     _cb(f"{len(chunk_dicts)} chunks créés (mode simple).")
     texts = [d["page_content"] for d in chunk_dicts]
-    _cb("Embedding des chunks (OpenAI)…")
-    vectors = _embed_texts(texts, openai_key, embedding_model, progress_cb=_cb)
+    _cb("Embedding des chunks (Modèle d'embedding)…")
+    vectors = _embed_texts(texts, api_key, embedding_model, progress_cb=_cb)
 
     return chunk_dicts, vectors
 
@@ -185,7 +194,7 @@ def _ingest_simple(
 def ingest_pdf(
     pdf_path: Path,
     weaviate_store,
-    openai_key: str,
+    api_key: str,
     embedding_model: str = "text-embedding-3-small",
     chunking_strategy: str = "by_token",
     parser: str = "docling",
@@ -203,7 +212,7 @@ def ingest_pdf(
         Chemin vers le fichier PDF.
     weaviate_store:
         Instance connectée de ``WeaviateStore``.
-    openai_key:
+    api_key:
         Clé API OpenAI.
     embedding_model:
         Modèle d'embedding OpenAI (défaut : text-embedding-3-small).
@@ -234,13 +243,13 @@ def ingest_pdf(
 
     if force_simple:
         chunk_dicts, vectors = _ingest_simple(
-            pdf_path, source, openai_key, embedding_model, progress_cb=_cb
+            pdf_path, source, api_key, embedding_model, progress_cb=_cb
         )
     else:
         try:
             chunk_dicts, vectors = _ingest_with_openingestion(
                 pdf_path, source, parser, chunking_strategy,
-                openai_key, embedding_model, _cb,
+                api_key, embedding_model, _cb,
             )
         except ImportError:
             logger.warning(
@@ -248,7 +257,7 @@ def ingest_pdf(
             )
             _cb("⚠️ openingestion non installé, mode simple activé.")
             chunk_dicts, vectors = _ingest_simple(
-                pdf_path, source, openai_key, embedding_model, progress_cb=_cb
+                pdf_path, source, api_key, embedding_model, progress_cb=_cb
             )
 
     _cb("Stockage dans Weaviate…")
@@ -269,7 +278,7 @@ def ingest_pdf(
 def ingest_jsonl(
     jsonl_path: Path,
     weaviate_store,
-    openai_key: str,
+    api_key: str,
     embedding_model: str = "text-embedding-3-small",
     progress_cb: Callable[[str], None] | None = None,
     source_override: str | None = None,
@@ -286,7 +295,7 @@ def ingest_jsonl(
         Chemin vers le fichier ``.jsonl``.
     weaviate_store:
         Instance connectée de ``WeaviateStore``.
-    openai_key:
+    api_key:
         Clé API OpenAI (pour les embeddings).
     embedding_model:
         Modèle OpenAI Embeddings.
@@ -355,9 +364,15 @@ def ingest_jsonl(
             "bboxes_json":   _json.dumps(pos, ensure_ascii=False),
         })
 
-    texts = [d["page_content"] for d in chunk_dicts]
-    _cb("Embedding des chunks (OpenAI)…")
-    vectors = _embed_texts(texts, openai_key, embedding_model, progress_cb=_cb)
+    # Stratégie Onyx : Enrichissement invisible du texte envoyé à l'embedder
+    texts = []
+    for d in chunk_dicts:
+        title_prefix = f"Titre de la section : {d['title_path']}\n\n" if d.get("title_path") else ""
+        enriched_text = f"{title_prefix}{d['page_content']}"
+        texts.append(enriched_text)
+
+    _cb("Embedding des chunks (Modèle d'embedding)…")
+    vectors = _embed_texts(texts, api_key, embedding_model, progress_cb=_cb)
 
     _cb("Stockage dans Weaviate…")
     n = weaviate_store.insert_chunks(chunk_dicts, vectors)

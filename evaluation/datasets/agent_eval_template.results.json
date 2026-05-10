@@ -1,0 +1,1124 @@
+{
+  "dataset_run_id": "603c4c34-bb5a-463d-b5d0-701186a771d7",
+  "dataset_path": "C:\\Polytech DI\\Semestre 10\\brh\\evaluation\\datasets\\agent_eval_template.jsonl",
+  "cases": [
+    {
+      "id": "case-001",
+      "tags": [
+        "smoke"
+      ],
+      "notes": "Cas de base a completer",
+      "eval_id": "f7931f63-4be5-4718-9ed7-e51b39e850fd",
+      "best_engine": "react_runtime_v2",
+      "results": [
+        {
+          "engine_id": "legacy_langgraph",
+          "trace_id": "7d4ee11d-9ec5-4360-8c08-58ddcc27777c",
+          "answer": "## Navigateurs recommandés\n\nLe navigateur recommandé pour l’application est **Firefox**, car il offre la meilleure compatibilité, notamment pour l’affichage correct des icônes drapeaux du sélecteur de langue (émojis). **Chrome** et **Edge** sont également supportés et fonctionnent, mais peuvent afficher ces icônes différemment. Il est précisé que la version récente de ces navigateurs avec support WebRTC est requise pour un fonctionnement optimal.\n\n---\n\n**Sources :**\n- 80f85158-manuel_utilisateur.pdf\n- a8994e00-guide_deploiement.pdf",
+          "error": null,
+          "duration_ms": 35199,
+          "iterations": 0,
+          "stop_reason": "completed",
+          "n_retrieved": 76,
+          "source_paths": [
+            "80f85158-manuel_utilisateur.pdf",
+            "80f85158-manuel_utilisateur.pdf",
+            "a8994e00-guide_deploiement.pdf",
+            "80f85158-manuel_utilisateur.pdf",
+            "0071fe41-manuel_developpeur.pdf",
+            "0071fe41-manuel_developpeur.pdf",
+            "80f85158-manuel_utilisateur.pdf",
+            "a8994e00-guide_deploiement.pdf",
+            "a8994e00-guide_deploiement.pdf",
+            "0071fe41-manuel_developpeur.pdf",
+            "a8994e00-guide_deploiement.pdf",
+            "0071fe41-manuel_developpeur.pdf",
+            "80f85158-manuel_utilisateur.pdf",
+            "0071fe41-manuel_developpeur.pdf",
+            "80f85158-manuel_utilisateur.pdf",
+            "a8994e00-guide_deploiement.pdf",
+            "0071fe41-manuel_developpeur.pdf",
+            "80f85158-manuel_utilisateur.pdf",
+            "a8994e00-guide_deploiement.pdf",
+            "0071fe41-manuel_developpeur.pdf"
+          ],
+          "usage": {
+            "llm": {
+              "input_tokens": 17965,
+              "output_tokens": 1278,
+              "total_tokens": 19243,
+              "call_count": 8
+            },
+            "embeddings": {
+              "input_tokens": 0,
+              "output_tokens": 0,
+              "total_tokens": 0,
+              "call_count": 0
+            },
+            "total": {
+              "input_tokens": 17965,
+              "output_tokens": 1278,
+              "total_tokens": 19243,
+              "call_count": 8
+            },
+            "calls": [
+              {
+                "kind": "completion",
+                "model": "gpt-4.1",
+                "input_tokens": 337,
+                "output_tokens": 119,
+                "total_tokens": 456,
+                "raw_usage": {
+                  "completion_tokens": 119,
+                  "prompt_tokens": 337,
+                  "total_tokens": 456,
+                  "completion_tokens_details": {
+                    "accepted_prediction_tokens": 0,
+                    "audio_tokens": 0,
+                    "reasoning_tokens": 0,
+                    "rejected_prediction_tokens": 0,
+                    "text_tokens": null,
+                    "image_tokens": null,
+                    "video_tokens": null
+                  },
+                  "prompt_tokens_details": {
+                    "audio_tokens": 0,
+                    "cached_tokens": 0,
+                    "text_tokens": null,
+                    "image_tokens": null,
+                    "video_tokens": null
+                  }
+                }
+              },
+              {
+                "kind": "completion",
+                "model": "gpt-4.1",
+                "input_tokens": 547,
+                "output_tokens": 243,
+                "total_tokens": 790,
+                "raw_usage": {
+                  "completion_tokens": 243,
+                  "prompt_tokens": 547,
+                  "total_tokens": 790,
+                  "completion_tokens_details": {
+                    "accepted_prediction_tokens": 0,
+                    "audio_tokens": 0,
+                    "reasoning_tokens": 0,
+                    "rejected_prediction_tokens": 0,
+                    "text_tokens": null,
+                    "image_tokens": null,
+                    "video_tokens": null
+                  },
+                  "prompt_tokens_details": {
+                    "audio_tokens": 0,
+                    "cached_tokens": 0,
+                    "text_tokens": null,
+                    "image_tokens": null,
+                    "video_tokens": null
+                  }
+                }
+              },
+              {
+                "kind": "completion",
+                "model": "gpt-4.1",
+                "input_tokens": 3857,
+                "output_tokens": 339,
+                "total_tokens": 4196,
+                "raw_usage": {
+                  "completion_tokens": 339,
+                  "prompt_tokens": 3857,
+                  "total_tokens": 4196,
+                  "completion_tokens_details": {
+                    "accepted_prediction_tokens": 0,
+                    "audio_tokens": 0,
+                    "reasoning_tokens": 0,
+                    "rejected_prediction_tokens": 0,
+                    "text_tokens": null,
+                    "image_tokens": null,
+                    "video_tokens": null
+                  },
+                  "prompt_tokens_details": {
+                    "audio_tokens": 0,
+                    "cached_tokens": 0,
+                    "text_tokens": null,
+                    "image_tokens": null,
+                    "video_tokens": null
+                  }
+                }
+              },
+              {
+                "kind": "completion",
+                "model": "gpt-4.1",
+                "input_tokens": 7452,
+                "output_tokens": 214,
+                "total_tokens": 7666,
+                "raw_usage": {
+                  "completion_tokens": 214,
+                  "prompt_tokens": 7452,
+                  "total_tokens": 7666,
+                  "completion_tokens_details": {
+                    "accepted_prediction_tokens": 0,
+                    "audio_tokens": 0,
+                    "reasoning_tokens": 0,
+                    "rejected_prediction_tokens": 0,
+                    "text_tokens": null,
+                    "image_tokens": null,
+                    "video_tokens": null
+                  },
+                  "prompt_tokens_details": {
+                    "audio_tokens": 0,
+                    "cached_tokens": 4096,
+                    "text_tokens": null,
+                    "image_tokens": null,
+                    "video_tokens": null
+                  }
+                }
+              },
+              {
+                "kind": "completion",
+                "model": "gpt-4.1",
+                "input_tokens": 3787,
+                "output_tokens": 173,
+                "total_tokens": 3960,
+                "raw_usage": {
+                  "completion_tokens": 173,
+                  "prompt_tokens": 3787,
+                  "total_tokens": 3960,
+                  "completion_tokens_details": {
+                    "accepted_prediction_tokens": 0,
+                    "audio_tokens": 0,
+                    "reasoning_tokens": 0,
+                    "rejected_prediction_tokens": 0,
+                    "text_tokens": null,
+                    "image_tokens": null,
+                    "video_tokens": null
+                  },
+                  "prompt_tokens_details": {
+                    "audio_tokens": 0,
+                    "cached_tokens": 0,
+                    "text_tokens": null,
+                    "image_tokens": null,
+                    "video_tokens": null
+                  }
+                }
+              },
+              {
+                "kind": "completion",
+                "model": "gpt-4.1",
+                "input_tokens": 1625,
+                "output_tokens": 127,
+                "total_tokens": 1752,
+                "raw_usage": {
+                  "completion_tokens": 127,
+                  "prompt_tokens": 1625,
+                  "total_tokens": 1752,
+                  "completion_tokens_details": {
+                    "accepted_prediction_tokens": 0,
+                    "audio_tokens": 0,
+                    "reasoning_tokens": 0,
+                    "rejected_prediction_tokens": 0,
+                    "text_tokens": null,
+                    "image_tokens": null,
+                    "video_tokens": null
+                  },
+                  "prompt_tokens_details": {
+                    "audio_tokens": 0,
+                    "cached_tokens": 0,
+                    "text_tokens": null,
+                    "image_tokens": null,
+                    "video_tokens": null
+                  }
+                }
+              },
+              {
+                "kind": "completion",
+                "model": "gpt-4.1",
+                "input_tokens": 220,
+                "output_tokens": 56,
+                "total_tokens": 276,
+                "raw_usage": {
+                  "completion_tokens": 56,
+                  "prompt_tokens": 220,
+                  "total_tokens": 276,
+                  "completion_tokens_details": {
+                    "accepted_prediction_tokens": 0,
+                    "audio_tokens": 0,
+                    "reasoning_tokens": 0,
+                    "rejected_prediction_tokens": 0,
+                    "text_tokens": null,
+                    "image_tokens": null,
+                    "video_tokens": null
+                  },
+                  "prompt_tokens_details": {
+                    "audio_tokens": 0,
+                    "cached_tokens": 0,
+                    "text_tokens": null,
+                    "image_tokens": null,
+                    "video_tokens": null
+                  }
+                }
+              },
+              {
+                "kind": "completion",
+                "model": "gpt-4.1",
+                "input_tokens": 140,
+                "output_tokens": 7,
+                "total_tokens": 147,
+                "raw_usage": {
+                  "completion_tokens": 7,
+                  "prompt_tokens": 140,
+                  "total_tokens": 147,
+                  "completion_tokens_details": {
+                    "accepted_prediction_tokens": 0,
+                    "audio_tokens": 0,
+                    "reasoning_tokens": 0,
+                    "rejected_prediction_tokens": 0,
+                    "text_tokens": null,
+                    "image_tokens": null,
+                    "video_tokens": null
+                  },
+                  "prompt_tokens_details": {
+                    "audio_tokens": 0,
+                    "cached_tokens": 0,
+                    "text_tokens": null,
+                    "image_tokens": null,
+                    "video_tokens": null
+                  }
+                }
+              }
+            ]
+          },
+          "answer_overlap_score": null,
+          "source_recall_score": null,
+          "citation_precision_score": null
+        },
+        {
+          "engine_id": "react_runtime_v2",
+          "trace_id": "cf759526-584e-438d-8525-0047f382aa58",
+          "answer": "## Navigateurs recommandés\n\nSelon les informations extraites des documents, les navigateurs recommandés pour l’utilisation de l’application sont :\n\n- **Firefox** : Il offre la meilleure compatibilité, notamment pour l’affichage correct des icônes drapeaux du sélecteur de langue (émojis).\n- **Chrome** : Également supporté, mais l’affichage des icônes peut différer.\n- **Edge** : Supporté, avec des différences possibles dans l’affichage des icônes.\n\nIl est précisé que l’utilisation d’une version récente de ces navigateurs, avec support WebRTC, est requise pour garantir le bon fonctionnement des fonctionnalités, notamment celles liées à la webcam.\n\n---\n\n**Sources :**\n- a8994e00-guide_deploiement.pdf\n- 80f85158-manuel_utilisateur.pdf",
+          "error": null,
+          "duration_ms": 22782,
+          "iterations": 3,
+          "stop_reason": "completed",
+          "n_retrieved": 85,
+          "source_paths": [
+            "a8994e00-guide_deploiement.pdf",
+            "80f85158-manuel_utilisateur.pdf",
+            "80f85158-manuel_utilisateur.pdf",
+            "a8994e00-guide_deploiement.pdf",
+            "80f85158-manuel_utilisateur.pdf",
+            "0071fe41-manuel_developpeur.pdf",
+            "0071fe41-manuel_developpeur.pdf",
+            "80f85158-manuel_utilisateur.pdf",
+            "80f85158-manuel_utilisateur.pdf",
+            "a8994e00-guide_deploiement.pdf",
+            "0071fe41-manuel_developpeur.pdf",
+            "80f85158-manuel_utilisateur.pdf",
+            "a8994e00-guide_deploiement.pdf",
+            "a8994e00-guide_deploiement.pdf",
+            "0071fe41-manuel_developpeur.pdf",
+            "80f85158-manuel_utilisateur.pdf",
+            "0071fe41-manuel_developpeur.pdf",
+            "a8994e00-guide_deploiement.pdf",
+            "0071fe41-manuel_developpeur.pdf",
+            "a8994e00-guide_deploiement.pdf"
+          ],
+          "usage": {
+            "llm": {
+              "input_tokens": 21775,
+              "output_tokens": 1623,
+              "total_tokens": 23398,
+              "call_count": 8
+            },
+            "embeddings": {
+              "input_tokens": 0,
+              "output_tokens": 0,
+              "total_tokens": 0,
+              "call_count": 0
+            },
+            "total": {
+              "input_tokens": 21775,
+              "output_tokens": 1623,
+              "total_tokens": 23398,
+              "call_count": 8
+            },
+            "calls": [
+              {
+                "kind": "completion",
+                "model": "gpt-4.1",
+                "input_tokens": 337,
+                "output_tokens": 126,
+                "total_tokens": 463,
+                "raw_usage": {
+                  "completion_tokens": 126,
+                  "prompt_tokens": 337,
+                  "total_tokens": 463,
+                  "completion_tokens_details": {
+                    "accepted_prediction_tokens": 0,
+                    "audio_tokens": 0,
+                    "reasoning_tokens": 0,
+                    "rejected_prediction_tokens": 0,
+                    "text_tokens": null,
+                    "image_tokens": null,
+                    "video_tokens": null
+                  },
+                  "prompt_tokens_details": {
+                    "audio_tokens": 0,
+                    "cached_tokens": 0,
+                    "text_tokens": null,
+                    "image_tokens": null,
+                    "video_tokens": null
+                  }
+                }
+              },
+              {
+                "kind": "completion",
+                "model": "gpt-4.1",
+                "input_tokens": 544,
+                "output_tokens": 242,
+                "total_tokens": 786,
+                "raw_usage": {
+                  "completion_tokens": 242,
+                  "prompt_tokens": 544,
+                  "total_tokens": 786,
+                  "completion_tokens_details": {
+                    "accepted_prediction_tokens": 0,
+                    "audio_tokens": 0,
+                    "reasoning_tokens": 0,
+                    "rejected_prediction_tokens": 0,
+                    "text_tokens": null,
+                    "image_tokens": null,
+                    "video_tokens": null
+                  },
+                  "prompt_tokens_details": {
+                    "audio_tokens": 0,
+                    "cached_tokens": 0,
+                    "text_tokens": null,
+                    "image_tokens": null,
+                    "video_tokens": null
+                  }
+                }
+              },
+              {
+                "kind": "completion",
+                "model": "gpt-4.1",
+                "input_tokens": 3853,
+                "output_tokens": 487,
+                "total_tokens": 4340,
+                "raw_usage": {
+                  "completion_tokens": 487,
+                  "prompt_tokens": 3853,
+                  "total_tokens": 4340,
+                  "completion_tokens_details": {
+                    "accepted_prediction_tokens": 0,
+                    "audio_tokens": 0,
+                    "reasoning_tokens": 0,
+                    "rejected_prediction_tokens": 0,
+                    "text_tokens": null,
+                    "image_tokens": null,
+                    "video_tokens": null
+                  },
+                  "prompt_tokens_details": {
+                    "audio_tokens": 0,
+                    "cached_tokens": 0,
+                    "text_tokens": null,
+                    "image_tokens": null,
+                    "video_tokens": null
+                  }
+                }
+              },
+              {
+                "kind": "completion",
+                "model": "gpt-4.1",
+                "input_tokens": 10851,
+                "output_tokens": 346,
+                "total_tokens": 11197,
+                "raw_usage": {
+                  "completion_tokens": 346,
+                  "prompt_tokens": 10851,
+                  "total_tokens": 11197,
+                  "completion_tokens_details": {
+                    "accepted_prediction_tokens": 0,
+                    "audio_tokens": 0,
+                    "reasoning_tokens": 0,
+                    "rejected_prediction_tokens": 0,
+                    "text_tokens": null,
+                    "image_tokens": null,
+                    "video_tokens": null
+                  },
+                  "prompt_tokens_details": {
+                    "audio_tokens": 0,
+                    "cached_tokens": 4224,
+                    "text_tokens": null,
+                    "image_tokens": null,
+                    "video_tokens": null
+                  }
+                }
+              },
+              {
+                "kind": "completion",
+                "model": "gpt-4.1",
+                "input_tokens": 4118,
+                "output_tokens": 191,
+                "total_tokens": 4309,
+                "raw_usage": {
+                  "completion_tokens": 191,
+                  "prompt_tokens": 4118,
+                  "total_tokens": 4309,
+                  "completion_tokens_details": {
+                    "accepted_prediction_tokens": 0,
+                    "audio_tokens": 0,
+                    "reasoning_tokens": 0,
+                    "rejected_prediction_tokens": 0,
+                    "text_tokens": null,
+                    "image_tokens": null,
+                    "video_tokens": null
+                  },
+                  "prompt_tokens_details": {
+                    "audio_tokens": 0,
+                    "cached_tokens": 0,
+                    "text_tokens": null,
+                    "image_tokens": null,
+                    "video_tokens": null
+                  }
+                }
+              },
+              {
+                "kind": "completion",
+                "model": "gpt-4.1",
+                "input_tokens": 1664,
+                "output_tokens": 175,
+                "total_tokens": 1839,
+                "raw_usage": {
+                  "completion_tokens": 175,
+                  "prompt_tokens": 1664,
+                  "total_tokens": 1839,
+                  "completion_tokens_details": {
+                    "accepted_prediction_tokens": 0,
+                    "audio_tokens": 0,
+                    "reasoning_tokens": 0,
+                    "rejected_prediction_tokens": 0,
+                    "text_tokens": null,
+                    "image_tokens": null,
+                    "video_tokens": null
+                  },
+                  "prompt_tokens_details": {
+                    "audio_tokens": 0,
+                    "cached_tokens": 0,
+                    "text_tokens": null,
+                    "image_tokens": null,
+                    "video_tokens": null
+                  }
+                }
+              },
+              {
+                "kind": "completion",
+                "model": "gpt-4.1",
+                "input_tokens": 268,
+                "output_tokens": 49,
+                "total_tokens": 317,
+                "raw_usage": {
+                  "completion_tokens": 49,
+                  "prompt_tokens": 268,
+                  "total_tokens": 317,
+                  "completion_tokens_details": {
+                    "accepted_prediction_tokens": 0,
+                    "audio_tokens": 0,
+                    "reasoning_tokens": 0,
+                    "rejected_prediction_tokens": 0,
+                    "text_tokens": null,
+                    "image_tokens": null,
+                    "video_tokens": null
+                  },
+                  "prompt_tokens_details": {
+                    "audio_tokens": 0,
+                    "cached_tokens": 0,
+                    "text_tokens": null,
+                    "image_tokens": null,
+                    "video_tokens": null
+                  }
+                }
+              },
+              {
+                "kind": "completion",
+                "model": "gpt-4.1",
+                "input_tokens": 140,
+                "output_tokens": 7,
+                "total_tokens": 147,
+                "raw_usage": {
+                  "completion_tokens": 7,
+                  "prompt_tokens": 140,
+                  "total_tokens": 147,
+                  "completion_tokens_details": {
+                    "accepted_prediction_tokens": 0,
+                    "audio_tokens": 0,
+                    "reasoning_tokens": 0,
+                    "rejected_prediction_tokens": 0,
+                    "text_tokens": null,
+                    "image_tokens": null,
+                    "video_tokens": null
+                  },
+                  "prompt_tokens_details": {
+                    "audio_tokens": 0,
+                    "cached_tokens": 0,
+                    "text_tokens": null,
+                    "image_tokens": null,
+                    "video_tokens": null
+                  }
+                }
+              }
+            ]
+          },
+          "answer_overlap_score": null,
+          "source_recall_score": null,
+          "citation_precision_score": null
+        }
+      ]
+    },
+    {
+      "id": "case-002",
+      "tags": [
+        "retrieval"
+      ],
+      "notes": "Verifier que les bonnes sources remontent",
+      "eval_id": "fb64ddf3-90b8-4d3f-bc16-5b314d95d8da",
+      "best_engine": "legacy_langgraph",
+      "results": [
+        {
+          "engine_id": "legacy_langgraph",
+          "trace_id": "1ad18ef5-aa31-4351-8aa0-c5bf9ead7b79",
+          "answer": "## Résumé du document principal\n\nLe document principal présente un projet de recherche et innovation axé sur le développement d’un démonstrateur de vision par ordinateur appliqué à deux jeux interactifs. Le premier jeu, inspiré du Dobble, met en œuvre YOLOv8 pour la détection en temps réel des symboles présents sur les cartes, facilitant ainsi l’identification instantanée du symbole commun entre deux cartes. Le second jeu, basé sur le célèbre Dino Run de Google Chrome, utilise MediaPipe et un perceptron multicouche (MLP) pour permettre la reconnaissance des gestes de la main, offrant ainsi un contrôle du dinosaure sans clavier.\n\nL’application est développée sous forme d’une application web, bâtie avec React pour le front-end et FastAPI pour le back-end. L’ensemble est conteneurisé avec Docker afin d’assurer la portabilité et la facilité de déploiement. Ce démonstrateur illustre concrètement les usages de l’intelligence artificielle dans le domaine du jeu vidéo et de l’interaction homme-machine, en mettant en avant des technologies de vision par ordinateur et de reconnaissance gestuelle.\n\n---\n**Sources :**\n- rapportPRI.pdf\n- 0071fe41-manuel_developpeur.pdf\n- 80f85158-manuel_utilisateur.pdf",
+          "error": null,
+          "duration_ms": 21453,
+          "iterations": 0,
+          "stop_reason": "completed",
+          "n_retrieved": 96,
+          "source_paths": [
+            "C:\\Users\\hnkouba\\Documents\\openIngestion\\testscript\\rapportPRI.pdf",
+            "0071fe41-manuel_developpeur.pdf",
+            "80f85158-manuel_utilisateur.pdf",
+            "80f85158-manuel_utilisateur.pdf",
+            "0071fe41-manuel_developpeur.pdf",
+            "80f85158-manuel_utilisateur.pdf",
+            "C:\\Users\\hnkouba\\Documents\\openIngestion\\testscript\\rapportPRI.pdf",
+            "a8994e00-guide_deploiement.pdf",
+            "0071fe41-manuel_developpeur.pdf",
+            "80f85158-manuel_utilisateur.pdf",
+            "a8994e00-guide_deploiement.pdf",
+            "a8994e00-guide_deploiement.pdf",
+            "C:\\Users\\hnkouba\\Documents\\openIngestion\\testscript\\rapportPRI.pdf",
+            "a8994e00-guide_deploiement.pdf",
+            "80f85158-manuel_utilisateur.pdf",
+            "a8994e00-guide_deploiement.pdf",
+            "80f85158-manuel_utilisateur.pdf",
+            "0071fe41-manuel_developpeur.pdf",
+            "80f85158-manuel_utilisateur.pdf",
+            "C:\\Users\\hnkouba\\Documents\\openIngestion\\testscript\\rapportPRI.pdf"
+          ],
+          "usage": {
+            "llm": {
+              "input_tokens": 14064,
+              "output_tokens": 1435,
+              "total_tokens": 15499,
+              "call_count": 7
+            },
+            "embeddings": {
+              "input_tokens": 0,
+              "output_tokens": 0,
+              "total_tokens": 0,
+              "call_count": 0
+            },
+            "total": {
+              "input_tokens": 14064,
+              "output_tokens": 1435,
+              "total_tokens": 15499,
+              "call_count": 7
+            },
+            "calls": [
+              {
+                "kind": "completion",
+                "model": "gpt-4.1",
+                "input_tokens": 333,
+                "output_tokens": 101,
+                "total_tokens": 434,
+                "raw_usage": {
+                  "completion_tokens": 101,
+                  "prompt_tokens": 333,
+                  "total_tokens": 434,
+                  "completion_tokens_details": {
+                    "accepted_prediction_tokens": 0,
+                    "audio_tokens": 0,
+                    "reasoning_tokens": 0,
+                    "rejected_prediction_tokens": 0,
+                    "text_tokens": null,
+                    "image_tokens": null,
+                    "video_tokens": null
+                  },
+                  "prompt_tokens_details": {
+                    "audio_tokens": 0,
+                    "cached_tokens": 0,
+                    "text_tokens": null,
+                    "image_tokens": null,
+                    "video_tokens": null
+                  }
+                }
+              },
+              {
+                "kind": "completion",
+                "model": "gpt-4.1",
+                "input_tokens": 529,
+                "output_tokens": 295,
+                "total_tokens": 824,
+                "raw_usage": {
+                  "completion_tokens": 295,
+                  "prompt_tokens": 529,
+                  "total_tokens": 824,
+                  "completion_tokens_details": {
+                    "accepted_prediction_tokens": 0,
+                    "audio_tokens": 0,
+                    "reasoning_tokens": 0,
+                    "rejected_prediction_tokens": 0,
+                    "text_tokens": null,
+                    "image_tokens": null,
+                    "video_tokens": null
+                  },
+                  "prompt_tokens_details": {
+                    "audio_tokens": 0,
+                    "cached_tokens": 0,
+                    "text_tokens": null,
+                    "image_tokens": null,
+                    "video_tokens": null
+                  }
+                }
+              },
+              {
+                "kind": "completion",
+                "model": "gpt-4.1",
+                "input_tokens": 6621,
+                "output_tokens": 484,
+                "total_tokens": 7105,
+                "raw_usage": {
+                  "completion_tokens": 484,
+                  "prompt_tokens": 6621,
+                  "total_tokens": 7105,
+                  "completion_tokens_details": {
+                    "accepted_prediction_tokens": 0,
+                    "audio_tokens": 0,
+                    "reasoning_tokens": 0,
+                    "rejected_prediction_tokens": 0,
+                    "text_tokens": null,
+                    "image_tokens": null,
+                    "video_tokens": null
+                  },
+                  "prompt_tokens_details": {
+                    "audio_tokens": 0,
+                    "cached_tokens": 0,
+                    "text_tokens": null,
+                    "image_tokens": null,
+                    "video_tokens": null
+                  }
+                }
+              },
+              {
+                "kind": "completion",
+                "model": "gpt-4.1",
+                "input_tokens": 4808,
+                "output_tokens": 221,
+                "total_tokens": 5029,
+                "raw_usage": {
+                  "completion_tokens": 221,
+                  "prompt_tokens": 4808,
+                  "total_tokens": 5029,
+                  "completion_tokens_details": {
+                    "accepted_prediction_tokens": 0,
+                    "audio_tokens": 0,
+                    "reasoning_tokens": 0,
+                    "rejected_prediction_tokens": 0,
+                    "text_tokens": null,
+                    "image_tokens": null,
+                    "video_tokens": null
+                  },
+                  "prompt_tokens_details": {
+                    "audio_tokens": 0,
+                    "cached_tokens": 0,
+                    "text_tokens": null,
+                    "image_tokens": null,
+                    "video_tokens": null
+                  }
+                }
+              },
+              {
+                "kind": "completion",
+                "model": "gpt-4.1",
+                "input_tokens": 1376,
+                "output_tokens": 268,
+                "total_tokens": 1644,
+                "raw_usage": {
+                  "completion_tokens": 268,
+                  "prompt_tokens": 1376,
+                  "total_tokens": 1644,
+                  "completion_tokens_details": {
+                    "accepted_prediction_tokens": 0,
+                    "audio_tokens": 0,
+                    "reasoning_tokens": 0,
+                    "rejected_prediction_tokens": 0,
+                    "text_tokens": null,
+                    "image_tokens": null,
+                    "video_tokens": null
+                  },
+                  "prompt_tokens_details": {
+                    "audio_tokens": 0,
+                    "cached_tokens": 0,
+                    "text_tokens": null,
+                    "image_tokens": null,
+                    "video_tokens": null
+                  }
+                }
+              },
+              {
+                "kind": "completion",
+                "model": "gpt-4.1",
+                "input_tokens": 262,
+                "output_tokens": 57,
+                "total_tokens": 319,
+                "raw_usage": {
+                  "completion_tokens": 57,
+                  "prompt_tokens": 262,
+                  "total_tokens": 319,
+                  "completion_tokens_details": {
+                    "accepted_prediction_tokens": 0,
+                    "audio_tokens": 0,
+                    "reasoning_tokens": 0,
+                    "rejected_prediction_tokens": 0,
+                    "text_tokens": null,
+                    "image_tokens": null,
+                    "video_tokens": null
+                  },
+                  "prompt_tokens_details": {
+                    "audio_tokens": 0,
+                    "cached_tokens": 0,
+                    "text_tokens": null,
+                    "image_tokens": null,
+                    "video_tokens": null
+                  }
+                }
+              },
+              {
+                "kind": "completion",
+                "model": "gpt-4.1",
+                "input_tokens": 135,
+                "output_tokens": 9,
+                "total_tokens": 144,
+                "raw_usage": {
+                  "completion_tokens": 9,
+                  "prompt_tokens": 135,
+                  "total_tokens": 144,
+                  "completion_tokens_details": {
+                    "accepted_prediction_tokens": 0,
+                    "audio_tokens": 0,
+                    "reasoning_tokens": 0,
+                    "rejected_prediction_tokens": 0,
+                    "text_tokens": null,
+                    "image_tokens": null,
+                    "video_tokens": null
+                  },
+                  "prompt_tokens_details": {
+                    "audio_tokens": 0,
+                    "cached_tokens": 0,
+                    "text_tokens": null,
+                    "image_tokens": null,
+                    "video_tokens": null
+                  }
+                }
+              }
+            ]
+          },
+          "answer_overlap_score": null,
+          "source_recall_score": null,
+          "citation_precision_score": null
+        },
+        {
+          "engine_id": "react_runtime_v2",
+          "trace_id": "6dc74ce0-fd45-4d13-a2c4-155ad4b6d9a3",
+          "answer": "## Résumé du document principal\n\nLe document principal présente un projet de recherche et innovation centré sur le développement d’un démonstrateur de vision par ordinateur intégrant deux jeux interactifs. Le premier jeu, inspiré du Dobble, utilise l’algorithme YOLOv8 pour la détection de symboles en temps réel. Le second jeu, basé sur le Chrome Dino, exploite Media-Pipe et un perceptron multicouche pour la reconnaissance des gestes de la main. L’ensemble de l’application web est développé avec React et FastAPI, et est entièrement conteneurisé à l’aide de Docker afin d’assurer sa portabilité. Ce démonstrateur met en avant des applications concrètes de l’intelligence artificielle dans les domaines du jeu vidéo et de l’interaction homme-machine.\n\n---\n**Sources :**\n- rapportPRI.pdf",
+          "error": null,
+          "duration_ms": 82735,
+          "iterations": 3,
+          "stop_reason": "completed",
+          "n_retrieved": 164,
+          "source_paths": [
+            "0071fe41-manuel_developpeur.pdf",
+            "80f85158-manuel_utilisateur.pdf",
+            "C:\\Users\\hnkouba\\Documents\\openIngestion\\testscript\\rapportPRI.pdf",
+            "a8994e00-guide_deploiement.pdf",
+            "0071fe41-manuel_developpeur.pdf",
+            "0071fe41-manuel_developpeur.pdf",
+            "80f85158-manuel_utilisateur.pdf",
+            "80f85158-manuel_utilisateur.pdf",
+            "C:\\Users\\hnkouba\\Documents\\openIngestion\\testscript\\rapportPRI.pdf",
+            "a8994e00-guide_deploiement.pdf",
+            "0071fe41-manuel_developpeur.pdf",
+            "80f85158-manuel_utilisateur.pdf",
+            "80f85158-manuel_utilisateur.pdf",
+            "80f85158-manuel_utilisateur.pdf",
+            "C:\\Users\\hnkouba\\Documents\\openIngestion\\testscript\\rapportPRI.pdf",
+            "a8994e00-guide_deploiement.pdf",
+            "C:\\Users\\hnkouba\\Documents\\openIngestion\\testscript\\rapportPRI.pdf",
+            "C:\\Users\\hnkouba\\Documents\\openIngestion\\testscript\\rapportPRI.pdf",
+            "0071fe41-manuel_developpeur.pdf",
+            "80f85158-manuel_utilisateur.pdf"
+          ],
+          "usage": {
+            "llm": {
+              "input_tokens": 38753,
+              "output_tokens": 3780,
+              "total_tokens": 42533,
+              "call_count": 8
+            },
+            "embeddings": {
+              "input_tokens": 0,
+              "output_tokens": 0,
+              "total_tokens": 0,
+              "call_count": 0
+            },
+            "total": {
+              "input_tokens": 38753,
+              "output_tokens": 3780,
+              "total_tokens": 42533,
+              "call_count": 8
+            },
+            "calls": [
+              {
+                "kind": "completion",
+                "model": "gpt-4.1",
+                "input_tokens": 333,
+                "output_tokens": 101,
+                "total_tokens": 434,
+                "raw_usage": {
+                  "completion_tokens": 101,
+                  "prompt_tokens": 333,
+                  "total_tokens": 434,
+                  "completion_tokens_details": {
+                    "accepted_prediction_tokens": 0,
+                    "audio_tokens": 0,
+                    "reasoning_tokens": 0,
+                    "rejected_prediction_tokens": 0,
+                    "text_tokens": null,
+                    "image_tokens": null,
+                    "video_tokens": null
+                  },
+                  "prompt_tokens_details": {
+                    "audio_tokens": 0,
+                    "cached_tokens": 0,
+                    "text_tokens": null,
+                    "image_tokens": null,
+                    "video_tokens": null
+                  }
+                }
+              },
+              {
+                "kind": "completion",
+                "model": "gpt-4.1",
+                "input_tokens": 529,
+                "output_tokens": 543,
+                "total_tokens": 1072,
+                "raw_usage": {
+                  "completion_tokens": 543,
+                  "prompt_tokens": 529,
+                  "total_tokens": 1072,
+                  "completion_tokens_details": {
+                    "accepted_prediction_tokens": 0,
+                    "audio_tokens": 0,
+                    "reasoning_tokens": 0,
+                    "rejected_prediction_tokens": 0,
+                    "text_tokens": null,
+                    "image_tokens": null,
+                    "video_tokens": null
+                  },
+                  "prompt_tokens_details": {
+                    "audio_tokens": 0,
+                    "cached_tokens": 0,
+                    "text_tokens": null,
+                    "image_tokens": null,
+                    "video_tokens": null
+                  }
+                }
+              },
+              {
+                "kind": "completion",
+                "model": "gpt-4.1",
+                "input_tokens": 13218,
+                "output_tokens": 242,
+                "total_tokens": 13460,
+                "raw_usage": {
+                  "completion_tokens": 242,
+                  "prompt_tokens": 13218,
+                  "total_tokens": 13460,
+                  "completion_tokens_details": {
+                    "accepted_prediction_tokens": 0,
+                    "audio_tokens": 0,
+                    "reasoning_tokens": 0,
+                    "rejected_prediction_tokens": 0,
+                    "text_tokens": null,
+                    "image_tokens": null,
+                    "video_tokens": null
+                  },
+                  "prompt_tokens_details": {
+                    "audio_tokens": 0,
+                    "cached_tokens": 1024,
+                    "text_tokens": null,
+                    "image_tokens": null,
+                    "video_tokens": null
+                  }
+                }
+              },
+              {
+                "kind": "completion",
+                "model": "gpt-4.1",
+                "input_tokens": 14520,
+                "output_tokens": 189,
+                "total_tokens": 14709,
+                "raw_usage": {
+                  "completion_tokens": 189,
+                  "prompt_tokens": 14520,
+                  "total_tokens": 14709,
+                  "completion_tokens_details": {
+                    "accepted_prediction_tokens": 0,
+                    "audio_tokens": 0,
+                    "reasoning_tokens": 0,
+                    "rejected_prediction_tokens": 0,
+                    "text_tokens": null,
+                    "image_tokens": null,
+                    "video_tokens": null
+                  },
+                  "prompt_tokens_details": {
+                    "audio_tokens": 0,
+                    "cached_tokens": 13440,
+                    "text_tokens": null,
+                    "image_tokens": null,
+                    "video_tokens": null
+                  }
+                }
+              },
+              {
+                "kind": "completion",
+                "model": "gpt-4.1",
+                "input_tokens": 1711,
+                "output_tokens": 173,
+                "total_tokens": 1884,
+                "raw_usage": {
+                  "completion_tokens": 173,
+                  "prompt_tokens": 1711,
+                  "total_tokens": 1884,
+                  "completion_tokens_details": {
+                    "accepted_prediction_tokens": 0,
+                    "audio_tokens": 0,
+                    "reasoning_tokens": 0,
+                    "rejected_prediction_tokens": 0,
+                    "text_tokens": null,
+                    "image_tokens": null,
+                    "video_tokens": null
+                  },
+                  "prompt_tokens_details": {
+                    "audio_tokens": 0,
+                    "cached_tokens": 0,
+                    "text_tokens": null,
+                    "image_tokens": null,
+                    "video_tokens": null
+                  }
+                }
+              },
+              {
+                "kind": "completion",
+                "model": "gpt-4.1",
+                "input_tokens": 262,
+                "output_tokens": 63,
+                "total_tokens": 325,
+                "raw_usage": {
+                  "completion_tokens": 63,
+                  "prompt_tokens": 262,
+                  "total_tokens": 325,
+                  "completion_tokens_details": {
+                    "accepted_prediction_tokens": 0,
+                    "audio_tokens": 0,
+                    "reasoning_tokens": 0,
+                    "rejected_prediction_tokens": 0,
+                    "text_tokens": null,
+                    "image_tokens": null,
+                    "video_tokens": null
+                  },
+                  "prompt_tokens_details": {
+                    "audio_tokens": 0,
+                    "cached_tokens": 0,
+                    "text_tokens": null,
+                    "image_tokens": null,
+                    "video_tokens": null
+                  }
+                }
+              },
+              {
+                "kind": "completion",
+                "model": "gpt-4.1",
+                "input_tokens": 8045,
+                "output_tokens": 2460,
+                "total_tokens": 10505,
+                "raw_usage": {
+                  "completion_tokens": 2460,
+                  "prompt_tokens": 8045,
+                  "total_tokens": 10505,
+                  "completion_tokens_details": {
+                    "accepted_prediction_tokens": 0,
+                    "audio_tokens": 0,
+                    "reasoning_tokens": 0,
+                    "rejected_prediction_tokens": 0,
+                    "text_tokens": null,
+                    "image_tokens": null,
+                    "video_tokens": null
+                  },
+                  "prompt_tokens_details": {
+                    "audio_tokens": 0,
+                    "cached_tokens": 0,
+                    "text_tokens": null,
+                    "image_tokens": null,
+                    "video_tokens": null
+                  }
+                }
+              },
+              {
+                "kind": "completion",
+                "model": "gpt-4.1",
+                "input_tokens": 135,
+                "output_tokens": 9,
+                "total_tokens": 144,
+                "raw_usage": {
+                  "completion_tokens": 9,
+                  "prompt_tokens": 135,
+                  "total_tokens": 144,
+                  "completion_tokens_details": {
+                    "accepted_prediction_tokens": 0,
+                    "audio_tokens": 0,
+                    "reasoning_tokens": 0,
+                    "rejected_prediction_tokens": 0,
+                    "text_tokens": null,
+                    "image_tokens": null,
+                    "video_tokens": null
+                  },
+                  "prompt_tokens_details": {
+                    "audio_tokens": 0,
+                    "cached_tokens": 0,
+                    "text_tokens": null,
+                    "image_tokens": null,
+                    "video_tokens": null
+                  }
+                }
+              }
+            ]
+          },
+          "answer_overlap_score": null,
+          "source_recall_score": null,
+          "citation_precision_score": null
+        }
+      ]
+    }
+  ]
+}

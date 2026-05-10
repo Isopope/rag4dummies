@@ -72,12 +72,14 @@ export interface QueryRequest {
   conversation_summary?: string;
   session_id?: string;
   model?: string;
+  engine_id?: string;
 }
 
 export interface QueryResponse {
   question_id: string;
   question: string;
   answer: string;
+  engine_id?: string;
   sources: ChunkModel[];
   follow_up_suggestions: string[];
   conversation_title?: string;
@@ -92,6 +94,7 @@ export interface StreamEvent {
   node?: string;
   message?: string;
   answer?: string;
+  engine_id?: string;
   sources?: ChunkModel[];
   follow_up_suggestions?: string[];
   conversation_title?: string;
@@ -168,6 +171,23 @@ export interface ModelsResponse {
 
 export async function getModels(): Promise<ModelsResponse> {
   const res = await fetch(`${BASE}/models`);
+  await assertOk(res);
+  return res.json();
+}
+
+export interface AgentEngineInfo {
+  id: string;
+  label: string;
+}
+
+export interface AgentEnginesResponse {
+  engines: AgentEngineInfo[];
+  default_query: string;
+  default_stream: string;
+}
+
+export async function getAgentEngines(): Promise<AgentEnginesResponse> {
+  const res = await fetch(`${BASE}/engines`);
   await assertOk(res);
   return res.json();
 }

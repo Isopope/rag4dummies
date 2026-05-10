@@ -22,8 +22,8 @@ class RAGConfig:
     max_tokens: int = 4000
     llm_timeout: float = 30.0
 
-    # ── Reranking ─────────────────────────────────────────────────────────────
-    cohere_key: Optional[str] = None
+    # ── Reranking (Serveur API) ────────────────────────────────────────────────
+    reranker_url: Optional[str] = "http://localhost:7997/v1/rerank"
 
     # ── Récupération ──────────────────────────────────────────────────────────
     top_k_retrieve: int = 20
@@ -40,7 +40,6 @@ class RAGConfig:
     tree_mode: str = "rag"  # "rag" | "multibranch" | "onebranch"
 
     # ── Feature flags ─────────────────────────────────────────────────────────
-    use_cohere_rerank: bool = True
     enable_compression: bool = False
     use_follow_up: bool = True
     use_title_generation: bool = True
@@ -60,7 +59,7 @@ class RAGConfig:
             embedding_model=os.getenv("EMBEDDING_MODEL", "text-embedding-3-small"),
             max_tokens=int(os.getenv("MAX_TOKENS", "4000")),
             llm_timeout=float(os.getenv("LLM_TIMEOUT", "30.0")),
-            cohere_key=os.getenv("COHERE_API_KEY") or None,
+            reranker_url=os.getenv("RERANKER_URL", "http://localhost:7997/v1/rerank") or None,
             top_k_retrieve=int(os.getenv("TOP_K_RETRIEVE", "20")),
             top_k_final=int(os.getenv("TOP_K_FINAL", "10")),
             hybrid_alpha=float(os.getenv("HYBRID_ALPHA", "0.5")),
@@ -68,7 +67,6 @@ class RAGConfig:
             token_threshold=int(os.getenv("TOKEN_THRESHOLD", "12000")),
             max_tree_depth=int(os.getenv("MAX_TREE_DEPTH", "5")),
             tree_mode=os.getenv("LANGGRAPH_MODE", "rag"),
-            use_cohere_rerank=os.getenv("USE_COHERE_RERANK", "true").lower() == "true",
             enable_compression=os.getenv("ENABLE_COMPRESSION", "false").lower() == "true",
             use_follow_up=os.getenv("USE_FOLLOW_UP", "true").lower() == "true",
             use_title_generation=os.getenv("USE_TITLE_GENERATION", "true").lower() == "true",
@@ -101,6 +99,6 @@ class RAGConfig:
             "max_agent_iter": self.max_agent_iter,
             "token_threshold": self.token_threshold,
             "tree_mode": self.tree_mode,
-            "use_cohere_rerank": self.use_cohere_rerank,
+            "reranker_url": self.reranker_url,
             "enable_compression": self.enable_compression,
         }

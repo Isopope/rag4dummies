@@ -117,7 +117,7 @@ def create_app() -> FastAPI:
     )
 
     # ── Routers ───────────────────────────────────────────────────────────────
-    from .routers import ingest, query, sources, feedback, documents, jobs, connectors, entities, sessions
+    from .routers import ingest, query, sources, feedback, documents, jobs, connectors, entities, sessions, engines, observability, evals
     from .routers import models as models_router
     from .auth import fastapi_users, auth_backend, UserRead, UserCreate, UserUpdate
 
@@ -139,6 +139,9 @@ def create_app() -> FastAPI:
     app.include_router(connectors.router, prefix="/connectors", tags=["connectors"])
     app.include_router(sessions.router,   prefix="/sessions",   tags=["sessions"])
     app.include_router(models_router.router, prefix="/models",  tags=["models"])
+    app.include_router(engines.router,    prefix="/engines",    tags=["engines"])
+    app.include_router(observability.router, prefix="/observability", tags=["observability"])
+    app.include_router(evals.router,      prefix="/evals",      tags=["evals"])
 
     # ── Health check ──────────────────────────────────────────────────────────
     @app.get("/health", tags=["health"], summary="Statut de l'API")

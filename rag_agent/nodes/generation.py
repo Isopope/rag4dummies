@@ -55,8 +55,18 @@ def _build_context_entry(index: int, doc: dict) -> str:
     return f"{header}\n{content}"
 
 
-def generate(state: UnifiedRAGState, *, llm_call: Callable, rag_config: RAGConfig) -> dict:
+def generate(
+    state: UnifiedRAGState,
+    *,
+    llm_call: Callable,
+    rag_config: RAGConfig | None = None,
+    config: RAGConfig | None = None,
+) -> dict:
     """Nœud 5 : génère la réponse finale à partir des chunks rerankés."""
+    rag_config = rag_config or config
+    if rag_config is None:
+        raise TypeError("generate requires 'rag_config' or backward-compatible 'config'")
+
     qid      = state["question_id"]
     docs     = state.get("reranked_docs", [])
     question = state["question"]
@@ -104,11 +114,21 @@ def generate(state: UnifiedRAGState, *, llm_call: Callable, rag_config: RAGConfi
     return {"answer": answer, "final_response": answer, "error": None, "decision_log": log}
 
 
-def generate_follow_up(state: UnifiedRAGState, *, llm_call: Callable, rag_config: RAGConfig) -> dict:
+def generate_follow_up(
+    state: UnifiedRAGState,
+    *,
+    llm_call: Callable,
+    rag_config: RAGConfig | None = None,
+    config: RAGConfig | None = None,
+) -> dict:
     """Génère 2-3 questions de suivi pertinentes.
 
     Nouveau nœud inspiré de langgraph_implementation.
     """
+    rag_config = rag_config or config
+    if rag_config is None:
+        raise TypeError("generate_follow_up requires 'rag_config' or backward-compatible 'config'")
+
     if not rag_config.use_follow_up:
         return {"follow_up_suggestions": [], "hidden_environment": state.get("hidden_environment", {})}
 
@@ -157,11 +177,21 @@ def generate_follow_up(state: UnifiedRAGState, *, llm_call: Callable, rag_config
     }
 
 
-def generate_title(state: UnifiedRAGState, *, llm_call: Callable, rag_config: RAGConfig) -> dict:
+def generate_title(
+    state: UnifiedRAGState,
+    *,
+    llm_call: Callable,
+    rag_config: RAGConfig | None = None,
+    config: RAGConfig | None = None,
+) -> dict:
     """Génère un titre court pour la conversation.
 
     Nouveau nœud inspiré de langgraph_implementation.
     """
+    rag_config = rag_config or config
+    if rag_config is None:
+        raise TypeError("generate_title requires 'rag_config' or backward-compatible 'config'")
+
     if not rag_config.use_title_generation:
         return {"conversation_title": None, "hidden_environment": state.get("hidden_environment", {})}
 

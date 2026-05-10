@@ -43,11 +43,21 @@ Structure requise :
 - Aspects manquants ou incomplets"""
 
 
-def compress_context(state: UnifiedRAGState, *, llm_call: Callable, rag_config: RAGConfig) -> dict:
+def compress_context(
+    state: UnifiedRAGState,
+    *,
+    llm_call: Callable,
+    rag_config: RAGConfig | None = None,
+    config: RAGConfig | None = None,
+) -> dict:
     """Compresse les docs récupérés quand le budget token est dépassé.
 
     Réinitialise messages = [] pour que agent_reason reparte avec la summary injectée.
     """
+    rag_config = rag_config or config
+    if rag_config is None:
+        raise TypeError("compress_context requires 'rag_config' or backward-compatible 'config'")
+
     qid      = state["question_id"]
     log      = list(state.get("decision_log", []))
     all_docs = state.get("all_docs", [])

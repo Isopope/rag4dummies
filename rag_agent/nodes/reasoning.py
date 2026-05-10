@@ -177,8 +177,18 @@ def _build_initial_prompt(state: UnifiedRAGState) -> str:
     )
 
 
-def agent_reason(state: UnifiedRAGState, *, llm_call: Callable, rag_config: RAGConfig) -> dict:
+def agent_reason(
+    state: UnifiedRAGState,
+    *,
+    llm_call: Callable,
+    rag_config: RAGConfig | None = None,
+    config: RAGConfig | None = None,
+) -> dict:
     """Nœud 2 : raisonnement ReAct, produit des tool_calls ou termine la boucle."""
+    rag_config = rag_config or config
+    if rag_config is None:
+        raise TypeError("agent_reason requires 'rag_config' or backward-compatible 'config'")
+
     qid        = state["question_id"]
     log        = list(state.get("decision_log", []))
     messages   = list(state.get("messages", []))
@@ -244,7 +254,8 @@ def agent_action(
     state: UnifiedRAGState,
     *,
     query_tool: QueryTool,
-    rag_config: RAGConfig,
+    rag_config: RAGConfig | None = None,
+    config: RAGConfig | None = None,
     weaviate_store: Any = None,
 ) -> dict:
     """Nœud 3 : exécute les tool_calls en parallèle (search_documents / get_neighboring_chunk).
@@ -254,6 +265,10 @@ def agent_action(
       2. Exécution parallèle         — ThreadPoolExecutor sur les appels Weaviate indépendants
       3. Fusion séquentielle          — déduplication seen_keys, construction fn_response_parts
     """
+    rag_config = rag_config or config
+    if rag_config is None:
+        raise TypeError("agent_action requires 'rag_config' or backward-compatible 'config'")
+
     qid            = state["question_id"]
     log            = list(state.get("decision_log", []))
     messages       = list(state.get("messages", []))
@@ -351,10 +366,11 @@ def agent_action(
 
     def _run_search(it: dict) -> dict:
         try:
+            strict_source = manual_filter or it["resolved_source"]
             chunks = query_tool.execute(
                 it["query"],
-                manual_source_filter=manual_filter,
-                target_sources=it["requested_targets"],
+                manual_source_filter=strict_source,
+                target_sources=[] if strict_source else it["requested_targets"],
                 top_k=rag_config.top_k_retrieve,
                 alpha=rag_config.hybrid_alpha,
             )
@@ -531,9 +547,14 @@ def consolidate_chunks(
     state: UnifiedRAGState,
     *,
     query_tool: QueryTool,
-    rag_config: RAGConfig,
+    rag_config: RAGConfig | None = None,
+    config: RAGConfig | None = None,
 ) -> dict:
     """Consolide et déduplique tous les chunks à la fin de la boucle ReAct."""
+    rag_config = rag_config or config
+    if rag_config is None:
+        raise TypeError("consolidate_chunks requires 'rag_config' or backward-compatible 'config'")
+
     docs = state.get("all_docs", [])
     log  = list(state.get("decision_log", []))
 

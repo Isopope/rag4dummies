@@ -114,6 +114,7 @@ export function useRagQuery() {
   const _executeStream = useCallback(async (
     text: string,
     modelId: string | undefined,
+    engineId: string | undefined,
     assistantId: string,
     /** Called once with the placeholder before streaming starts; sets messages. */
     initMessages: (placeholder: ChatMessage) => void,
@@ -146,7 +147,13 @@ export function useRagQuery() {
 
     try {
       for await (const event of streamQueryRAG(
-        { question: text, conversation_summary: conversationSummary, session_id: currentSessionId, model: modelId },
+        {
+          question: text,
+          conversation_summary: conversationSummary,
+          session_id: currentSessionId,
+          model: modelId,
+          engine_id: engineId,
+        },
         controller.signal,
         token,
       )) {
@@ -233,6 +240,7 @@ export function useRagQuery() {
   const sendMessage = useCallback(async (payload: ChatInputSubmitPayload | string) => {
     const text = typeof payload === 'string' ? payload : payload.text;
     const modelId = typeof payload === 'string' ? undefined : payload.modelId || undefined;
+    const engineId = typeof payload === 'string' ? undefined : payload.engineId || undefined;
     if (!text.trim()) return;
 
     abortRef.current?.abort();
@@ -245,7 +253,7 @@ export function useRagQuery() {
     };
 
     const assistantId = `a-${Date.now() + 1}`;
-    await _executeStream(text, modelId, assistantId, (placeholder) =>
+    await _executeStream(text, modelId, engineId, assistantId, (placeholder) =>
       setMessages((prev) => [...prev, userMsg, placeholder]),
     );
   }, [_executeStream]);
@@ -280,7 +288,7 @@ export function useRagQuery() {
     setMessages(truncated);
 
     const assistantId = `a-${Date.now()}`;
-    await _executeStream(text, modelId, assistantId, (placeholder) =>
+    await _executeStream(text, modelId, undefined, assistantId, (placeholder) =>
       setMessages((prev) => [...prev, placeholder]),
     );
   }, [_executeStream]);

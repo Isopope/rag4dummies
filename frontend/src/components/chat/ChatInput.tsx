@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, useCallback, type FormEvent, type KeyboardEvent } from 'react';
 import { ArrowUp, Square } from 'lucide-react';
 import { ChatInputModelSelect } from './ChatInputModelSelect';
+import { ChatInputRuntimeSelect } from './ChatInputRuntimeSelect';
 import { cn } from '@/lib/utils';
 
 const MIN_INPUT_HEIGHT = 44;
@@ -9,6 +10,7 @@ const MAX_INPUT_HEIGHT = 200;
 export interface ChatInputSubmitPayload {
   text: string;
   modelId: string;
+  engineId: string;
 }
 
 interface ChatInputProps {
@@ -28,16 +30,17 @@ const ChatInput = ({
 }: ChatInputProps) => {
   const [message, setMessage] = useState('');
   const [modelId, setModelId] = useState('');
+  const [engineId, setEngineId] = useState('');
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const wrapperRef = useRef<HTMLDivElement>(null);
 
   const handleSend = useCallback(() => {
     const trimmed = message.trim();
     if (!trimmed || disabled) return;
-    onSend({ text: trimmed, modelId });
+    onSend({ text: trimmed, modelId, engineId });
     setMessage('');
     if (wrapperRef.current) wrapperRef.current.style.height = `${MIN_INPUT_HEIGHT}px`;
-  }, [message, disabled, onSend, modelId]);
+  }, [message, disabled, onSend, modelId, engineId]);
 
   const handleSubmit = (e: FormEvent) => {
     e.preventDefault();
@@ -100,6 +103,7 @@ const ChatInput = ({
 
             <div className="flex items-center justify-between px-2 pb-2">
               <div className="flex items-center gap-1">
+                <ChatInputRuntimeSelect value={engineId} onChange={setEngineId} />
                 <ChatInputModelSelect value={modelId} onChange={setModelId} />
               </div>
 

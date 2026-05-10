@@ -10,5 +10,6 @@ Le choix se fait à partir des variables d'environnement :
   - sinon              → LocalDocumentStore
 """
 from storage.document_store import DocumentStore, LocalDocumentStore, MinioDocumentStore, make_document_store
+from storage.observability_store import LocalObservabilityStore
 
-__all__ = ["DocumentStore", "LocalDocumentStore", "MinioDocumentStore", "make_document_store"]
+__all__ = ["DocumentStore", "LocalDocumentStore", "MinioDocumentStore", "make_document_store", "LocalObservabilityStore"]

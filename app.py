@@ -233,7 +233,7 @@ with st.sidebar:
                 n = ingest_jsonl(
                     jsonl_path=dest,
                     weaviate_store=store,
-                    openai_key=openai_key,
+                    api_key=openai_key,
                     embedding_model=EMBEDDING_MODEL,
                     progress_cb=_progress,
                     source_override=source_override_input.strip() or None,
@@ -244,7 +244,7 @@ with st.sidebar:
                 n = ingest_pdf(
                     pdf_path=dest,
                     weaviate_store=store,
-                    openai_key=openai_key,
+                    api_key=openai_key,
                     embedding_model=EMBEDDING_MODEL,
                     chunking_strategy=strategy,
                     parser=parser if parser != "simple" else "docling",

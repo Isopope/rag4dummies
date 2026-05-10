@@ -1,13 +1,17 @@
 """Injection de dépendances FastAPI — store Weaviate et agent RAG (singletons)."""
 from __future__ import annotations
 
+from dataclasses import replace
 from functools import lru_cache
 from typing import TYPE_CHECKING
 
 from fastapi import HTTPException, status
 from loguru import logger
 
+from .engine_selection import get_agent_engine_name, resolve_agent_engine_name
+
 if TYPE_CHECKING:
+    from agent_runtime import AgentEngine
     from rag_agent import RAGAgent
     from weaviate_store import WeaviateStore
 
@@ -59,6 +63,7 @@ def close_store() -> None:
 
 _agent: "RAGAgent | None" = None
 _agents_by_model: "dict[str, RAGAgent]" = {}
+_engines_by_model: "dict[tuple[str, str], AgentEngine]" = {}
 
 
 def _build_agent(llm_model: str) -> "RAGAgent":
@@ -69,7 +74,7 @@ def _build_agent(llm_model: str) -> "RAGAgent":
     agent = RAGAgent(
         weaviate_store     = store,
         openai_key         = cfg.openai_key,
-        cohere_key         = cfg.cohere_key,
+        reranker_url       = cfg.reranker_url,
         embedding_model    = cfg.embedding_model,
         llm_model          = llm_model,
         top_k_retrieve     = cfg.top_k_retrieve,
@@ -104,11 +109,44 @@ def get_agent_for_model(model: "str | None" = None) -> "RAGAgent":
     return _agents_by_model[model]
 
 
+def _build_agent_engine(llm_model: str, engine_name: str) -> "AgentEngine":
+    cfg = get_config()
+    store = get_store()
+
+    if engine_name == "react_runtime_v2":
+        from agent_runtime import ReactRuntimeV2Engine
+
+        return ReactRuntimeV2Engine(
+            config=replace(cfg, llm_model=llm_model),
+            weaviate_store=store,
+        )
+
+    from agent_runtime import LegacyLangGraphEngine
+
+    return LegacyLangGraphEngine(_build_agent(llm_model))
+
+
+def get_agent_engine_for_model(
+    model: "str | None" = None,
+    *,
+    engine_name: str | None = None,
+    surface: str = "query",
+) -> "AgentEngine":
+    """Retourne le moteur agentique demande pour le modele courant."""
+    llm_model = model or get_config().llm_model
+    resolved_engine = resolve_agent_engine_name(engine_name, surface=surface)
+    key = (resolved_engine, llm_model)
+    if key not in _engines_by_model:
+        _engines_by_model[key] = _build_agent_engine(llm_model, resolved_engine)
+    return _engines_by_model[key]
+
+
 def reset_agent() -> None:
     """Force la recréation de tous les agents (ex : après changement de clé API)."""
     global _agent
     _agent = None
     _agents_by_model.clear()
+    _engines_by_model.clear()
 
 
 # ── Base de données (re-export pour les routers) ───────────────────────────────
@@ -118,6 +156,7 @@ from db.engine import get_db_session as get_db_session  # noqa: E402, F401
 # ── Document Store — MinIO ou local (singleton processus) ─────────────────────
 
 _document_store = None
+_observability_store = None
 
 
 def get_document_store():
@@ -130,6 +169,16 @@ def get_document_store():
         from storage import make_document_store
         _document_store = make_document_store()
     return _document_store
+
+
+def get_observability_store():
+    """Retourne le store d'observabilite local."""
+    global _observability_store
+    if _observability_store is None:
+        from storage import LocalObservabilityStore
+
+        _observability_store = LocalObservabilityStore()
+    return _observability_store
 
 
 # ── Celery client (singleton processus) ───────────────────────────────────────

@@ -68,8 +68,18 @@ def _resolve_source_filters(
     return resolved
 
 
-def analyze_and_plan(state: UnifiedRAGState, *, llm_call: Callable, rag_config: RAGConfig) -> dict:
-    """Nœud 1 : décompose la question et suggère des documents cibles sans filtrage dur."""
+def analyze_and_plan(
+    state: UnifiedRAGState,
+    *,
+    llm_call: Callable,
+    rag_config: RAGConfig | None = None,
+    config: RAGConfig | None = None,
+) -> dict:
+    """Nœud 1 : décompose la question et identifie le filtre source."""
+    rag_config = rag_config or config
+    if rag_config is None:
+        raise TypeError("analyze_and_plan requires 'rag_config' or backward-compatible 'config'")
+
     qid      = state["question_id"]
     log      = list(state.get("decision_log", []))
     question = state["question"]

@@ -148,6 +148,7 @@ class QueryTool:
     def execute(
         self,
         query: str,
+        source_filter: Optional[str] = None,
         manual_source_filter: Optional[str] = None,
         target_sources: Optional[list[str]] = None,
         top_k: int = 20,
@@ -166,6 +167,8 @@ class QueryTool:
         Sinon :
           - Double recherche hybride globale (comportement standard).
         """
+        strict_source_filter = manual_source_filter or source_filter
+
         if self.weaviate_store is None:
             return self._mock_results(query, top_k)
 
@@ -176,16 +179,16 @@ class QueryTool:
         alpha_kw = max(0.0, round(alpha - 0.3, 1))
         soft_targets = list(dict.fromkeys(target_sources or []))
 
-        if manual_source_filter:
+        if strict_source_filter:
             sem_docs = weaviate_with_retry(
                 self.weaviate_store.hybrid_search,
                 query=query, query_vector=vector,
-                top_k=top_k, alpha=alpha, source=manual_source_filter,
+                top_k=top_k, alpha=alpha, source=strict_source_filter,
             )
             kw_docs = weaviate_with_retry(
                 self.weaviate_store.hybrid_search,
                 query=query, query_vector=vector,
-                top_k=top_k, alpha=alpha_kw, source=manual_source_filter,
+                top_k=top_k, alpha=alpha_kw, source=strict_source_filter,
             )
             return weighted_rrf([sem_docs, kw_docs], [1.0, 0.5])
 
