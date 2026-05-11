@@ -103,7 +103,7 @@ class UnifiedRAGState(TypedDict):
     """Schéma optionnel des collections Weaviate : {collection_name: {fields, length, summary}}."""
 
     collection_names: list[str]
-    """Noms des collections Weaviate actives. Par défaut : ['RagChunk']."""
+    """Noms des collections Weaviate actives. Par défaut : ['RagChunkV2']."""
 
     # ── Planification ─────────────────────────────────────────────────────────
     sub_queries: list[str]
@@ -232,7 +232,7 @@ def create_unified_state(
         target_sources=[],
         conversation_summary=conversation_summary,
         collection_metadata=collection_metadata or {},
-        collection_names=collection_names or ["RagChunk"],
+        collection_names=collection_names or ["RagChunkV2"],
         sub_queries=[],
         messages=[],
         all_docs=[],

@@ -131,10 +131,13 @@ class QueryTool:
     """Recherche hybride sur Weaviate avec wRRF, retry et mode mock.
 
     Encapsule la logique search_documents de rag_pipeline.py:627-683.
+    Aligne sur Onyx : triple canal content/keyword/title avec named vectors.
     """
 
     _CHUNK_INDEX_MIN = 0
     _CHUNK_INDEX_MAX = 100_000
+    _CONTENT_VECTOR  = "content_vector"
+    _TITLE_VECTOR    = "title_vector"
 
     def __init__(
         self,
@@ -145,6 +148,14 @@ class QueryTool:
         self.embedder       = embedder
         self.name           = "query"
 
+    def _embed_query(self, text: str) -> list[float]:
+        """Embed via embed_query() si dispo, sinon callable (rétro-compatibilité)."""
+        if self.embedder is None:
+            raise RuntimeError("Un embedder est requis pour la recherche réelle")
+        if hasattr(self.embedder, "embed_query"):
+            return self.embedder.embed_query(text)
+        return self.embedder(text)
+
     def execute(
         self,
         query: str,
@@ -154,76 +165,53 @@ class QueryTool:
         top_k: int = 20,
         alpha: float = 0.5,
     ) -> list[dict]:
-        """Effectue une recherche hybride avec séparation filtre strict / biais souple.
+        """Triple-canal hybride (content α=0.5 w=1.0 / keyword α=0.2 w=0.5 / title α=1.0 w=0.8).
 
-        Quand manual_source_filter est fourni :
-          - Recherche strictement limitée à ce document.
-
-        Quand target_sources est fourni sans filtre strict :
-          - Recherche globale classique.
-          - Recherches ciblées supplémentaires sur les documents suggérés.
-          - Fusion wRRF avec un léger bonus pour les listes ciblées.
-
-        Sinon :
-          - Double recherche hybride globale (comportement standard).
+        Aligne sur Onyx opensearch/search.py:76-80.
         """
         strict_source_filter = manual_source_filter or source_filter
 
         if self.weaviate_store is None:
             return self._mock_results(query, top_k)
 
-        if self.embedder is None:
-            raise RuntimeError("Un embedder est requis pour la recherche réelle")
-
-        vector   = self.embedder(query.strip() or " ")
-        alpha_kw = max(0.0, round(alpha - 0.3, 1))
+        vector = self._embed_query(query.strip() or " ")
         soft_targets = list(dict.fromkeys(target_sources or []))
 
-        if strict_source_filter:
-            sem_docs = weaviate_with_retry(
+        def _search(src):
+            content_docs = weaviate_with_retry(
                 self.weaviate_store.hybrid_search,
                 query=query, query_vector=vector,
-                top_k=top_k, alpha=alpha, source=strict_source_filter,
+                top_k=top_k, alpha=alpha, source=src,
+                target_vector=self._CONTENT_VECTOR,
             )
             kw_docs = weaviate_with_retry(
                 self.weaviate_store.hybrid_search,
                 query=query, query_vector=vector,
-                top_k=top_k, alpha=alpha_kw, source=strict_source_filter,
+                top_k=top_k, alpha=0.2, source=src,
+                target_vector=self._CONTENT_VECTOR,
             )
-            return weighted_rrf([sem_docs, kw_docs], [1.0, 0.5])
+            title_docs = weaviate_with_retry(
+                self.weaviate_store.hybrid_search,
+                query=query, query_vector=vector,
+                top_k=top_k, alpha=1.0, source=src,
+                target_vector=self._TITLE_VECTOR,
+            )
+            return weighted_rrf([content_docs, kw_docs, title_docs], [1.0, 0.5, 0.8])
 
-        global_sem = weaviate_with_retry(
-            self.weaviate_store.hybrid_search,
-            query=query, query_vector=vector,
-            top_k=top_k, alpha=alpha, source=None,
-        )
-        global_kw = weaviate_with_retry(
-            self.weaviate_store.hybrid_search,
-            query=query, query_vector=vector,
-            top_k=top_k, alpha=alpha_kw, source=None,
-        )
+        if strict_source_filter:
+            return _search(strict_source_filter)
+
+        global_merged = _search(None)
 
         if soft_targets:
-            ranked_results: list[list[dict]] = [global_sem, global_kw]
-            weights: list[float] = [1.0, 0.5]
-
+            ranked_results: list[list[dict]] = [global_merged]
+            weights: list[float] = [1.0]
             for target in soft_targets:
-                targeted_sem = weaviate_with_retry(
-                    self.weaviate_store.hybrid_search,
-                    query=query, query_vector=vector,
-                    top_k=top_k, alpha=alpha, source=target,
-                )
-                targeted_kw = weaviate_with_retry(
-                    self.weaviate_store.hybrid_search,
-                    query=query, query_vector=vector,
-                    top_k=top_k, alpha=alpha_kw, source=target,
-                )
-                ranked_results.extend([targeted_sem, targeted_kw])
-                weights.extend([1.2, 0.6])
-
+                ranked_results.append(_search(target))
+                weights.append(1.2)
             return weighted_rrf(ranked_results, weights)
 
-        return weighted_rrf([global_sem, global_kw], [1.0, 0.5])
+        return global_merged
 
     def get_chunk_by_index(self, source: str, idx: int) -> Optional[dict]:
         """Récupère un chunk voisin par son index."""
@@ -262,7 +250,7 @@ class QueryTool:
         limit: int = 5,
     ) -> UnifiedRAGState:
         """Execute la recherche et écrit le résultat dans state['environment']."""
-        colls = collection_names or state.get("collection_names") or ["RagChunk"]
+        colls = collection_names or state.get("collection_names") or ["RagChunkV2"]
         manual_source_filter = (
             (filters or {}).get("source")
             or state.get("manual_source_filter")

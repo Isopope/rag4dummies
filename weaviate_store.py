@@ -1,9 +1,9 @@
-"""Weaviate vector store — wrapper minimaliste pour le POC RAG.
+"""Weaviate vector store — wrapper pour le pipeline RAG Onyx-aligned.
 
-Collection unique : RagChunk
-Vectorizer       : none (vecteurs Voyage AI fournis manuellement)
+Collection cible : RagChunkV2
+Vectorizer       : named vectors none (vecteurs fournis manuellement)
 Index            : HNSW cosinus + BM25 (activé par défaut sur les propriétés TEXT)
-Recherche        : hybrid (BM25 + dense), paramétrable via alpha
+Recherche        : hybrid (BM25 + dense), paramétrable via alpha et target_vector
 """
 from __future__ import annotations
 
@@ -20,7 +20,10 @@ from weaviate.classes.config import (
 )
 from weaviate.classes.query import Filter, HybridFusion, MetadataQuery
 
-COLLECTION_NAME = "RagChunk"
+COLLECTION_NAME = "RagChunkV2"
+LEGACY_COLLECTION_NAME = "RagChunk"
+CONTENT_VECTOR = "content_vector"
+TITLE_VECTOR = "title_vector"
 
 
 class WeaviateStore:
@@ -78,13 +81,23 @@ class WeaviateStore:
 
         self._client.collections.create(
             name=COLLECTION_NAME,
-            vectorizer_config=Configure.Vectorizer.none(),
+            vectorizer_config=[
+                Configure.NamedVectors.none(
+                    name=CONTENT_VECTOR,
+                    vector_index_config=Configure.VectorIndex.hnsw(
+                        distance_metric=VectorDistances.COSINE
+                    ),
+                ),
+                Configure.NamedVectors.none(
+                    name=TITLE_VECTOR,
+                    vector_index_config=Configure.VectorIndex.hnsw(
+                        distance_metric=VectorDistances.COSINE
+                    ),
+                ),
+            ],
             inverted_index_config=Configure.inverted_index(
                 index_null_state=True,
                 index_property_length=True,
-            ),
-            vector_index_config=Configure.VectorIndex.hnsw(
-                distance_metric=VectorDistances.COSINE
             ),
             properties=[
                 # ── champs indexés BM25 (Tokenization.WORD) ───────────────
@@ -98,6 +111,45 @@ class WeaviateStore:
                     data_type=DataType.TEXT,
                     tokenization=Tokenization.WORD,
                 ),
+                Property(
+                    name="title_text",
+                    data_type=DataType.TEXT,
+                    tokenization=Tokenization.WORD,
+                ),
+                Property(
+                    name="doc_summary",
+                    data_type=DataType.TEXT,
+                    tokenization=Tokenization.WORD,
+                ),
+                Property(
+                    name="chunk_context",
+                    data_type=DataType.TEXT,
+                    tokenization=Tokenization.WORD,
+                ),
+                Property(
+                    name="metadata_suffix_keyword",
+                    data_type=DataType.TEXT,
+                    tokenization=Tokenization.WORD,
+                ),
+                # ── contenus enrichis (pas de BM25 — texte généré) ────────
+                Property(
+                    name="embedding_content",
+                    data_type=DataType.TEXT,
+                    index_searchable=False,
+                    skip_vectorization=True,
+                ),
+                Property(
+                    name="title_prefix",
+                    data_type=DataType.TEXT,
+                    index_searchable=False,
+                    skip_vectorization=True,
+                ),
+                Property(
+                    name="metadata_suffix_semantic",
+                    data_type=DataType.TEXT,
+                    index_searchable=False,
+                    skip_vectorization=True,
+                ),
                 # ── métadonnées structurelles (filtrage / affichage) ──────
                 Property(name="source",        data_type=DataType.TEXT, skip_vectorization=True),
                 Property(name="kind",          data_type=DataType.TEXT, skip_vectorization=True),
@@ -109,7 +161,6 @@ class WeaviateStore:
                 Property(name="prev_chunk",    data_type=DataType.INT),
                 Property(name="next_chunk",    data_type=DataType.INT),
                 # ── contenus enrichis (pas de BM25 — markup/JSON) ─────────
-                # index_searchable=False désactive l'index inversé BM25
                 Property(
                     name="html",
                     data_type=DataType.TEXT,
@@ -128,8 +179,7 @@ class WeaviateStore:
                     index_searchable=False,
                     skip_vectorization=True,
                 ),
-                # ── coordonnées de localisation dans le PDF (visual grounding) ─
-                # Format JSON : [[page, x0, y0, x1, y1], ...]  (points PDF, origine haut-gauche)
+                # ── coordonnées de localisation dans le PDF ────────────────
                 Property(
                     name="bboxes_json",
                     data_type=DataType.TEXT,
@@ -139,6 +189,12 @@ class WeaviateStore:
                 # ── métadonnées métier ─────────────────────────────────────
                 Property(name="entity",        data_type=DataType.TEXT, skip_vectorization=True),
                 Property(name="validity_date", data_type=DataType.DATE, skip_vectorization=True),
+                # ── audit embedding (versioning Onyx-aligned) ─────────────
+                Property(name="embedding_model",      data_type=DataType.TEXT, skip_vectorization=True),
+                Property(name="embedding_provider",   data_type=DataType.TEXT, skip_vectorization=True),
+                Property(name="embedding_dim",        data_type=DataType.INT),
+                Property(name="embedding_version",    data_type=DataType.TEXT, skip_vectorization=True),
+                Property(name="embedding_created_at", data_type=DataType.DATE, skip_vectorization=True),
             ],
         )
         logger.info("Collection {} créée.", COLLECTION_NAME)
@@ -147,7 +203,6 @@ class WeaviateStore:
         """Ajoute les propriétés manquantes à une collection existante (migration non-destructive)."""
         collection = self._client.collections.get(COLLECTION_NAME)
         cfg = collection.config.get()
-        # Active indexNullState si absent (collections créées avant ce patch)
         inv = cfg.inverted_index_config
         if not getattr(inv, "index_null_state", False):
             collection.config.update(
@@ -156,28 +211,29 @@ class WeaviateStore:
                     index_property_length=True,
                 )
             )
-            logger.info("invertedIndexConfig mis à jour (indexNullState=true) sur {}.", COLLECTION_NAME)
+            logger.info("invertedIndexConfig mis à jour sur {}.", COLLECTION_NAME)
         existing_props = {p.name for p in cfg.properties}
-        if "bboxes_json" not in existing_props:
-            collection.config.add_property(
-                Property(
-                    name="bboxes_json",
-                    data_type=DataType.TEXT,
-                    index_searchable=False,
-                    skip_vectorization=True,
-                )
-            )
-            logger.info("Propriété bboxes_json ajoutée à la collection {}.", COLLECTION_NAME)
-        if "entity" not in existing_props:
-            collection.config.add_property(
-                Property(name="entity", data_type=DataType.TEXT, skip_vectorization=True)
-            )
-            logger.info("Propriété entity ajoutée à la collection {}.", COLLECTION_NAME)
-        if "validity_date" not in existing_props:
-            collection.config.add_property(
-                Property(name="validity_date", data_type=DataType.DATE, skip_vectorization=True)
-            )
-            logger.info("Propriété validity_date ajoutée à la collection {}.", COLLECTION_NAME)
+        additions = [
+            ("bboxes_json", Property(name="bboxes_json", data_type=DataType.TEXT, index_searchable=False, skip_vectorization=True)),
+            ("entity", Property(name="entity", data_type=DataType.TEXT, skip_vectorization=True)),
+            ("validity_date", Property(name="validity_date", data_type=DataType.DATE, skip_vectorization=True)),
+            ("title_text", Property(name="title_text", data_type=DataType.TEXT, tokenization=Tokenization.WORD)),
+            ("title_prefix", Property(name="title_prefix", data_type=DataType.TEXT, index_searchable=False, skip_vectorization=True)),
+            ("doc_summary", Property(name="doc_summary", data_type=DataType.TEXT, tokenization=Tokenization.WORD)),
+            ("chunk_context", Property(name="chunk_context", data_type=DataType.TEXT, tokenization=Tokenization.WORD)),
+            ("embedding_content", Property(name="embedding_content", data_type=DataType.TEXT, index_searchable=False, skip_vectorization=True)),
+            ("metadata_suffix_keyword", Property(name="metadata_suffix_keyword", data_type=DataType.TEXT, tokenization=Tokenization.WORD)),
+            ("metadata_suffix_semantic", Property(name="metadata_suffix_semantic", data_type=DataType.TEXT, index_searchable=False, skip_vectorization=True)),
+            ("embedding_model", Property(name="embedding_model", data_type=DataType.TEXT, skip_vectorization=True)),
+            ("embedding_provider", Property(name="embedding_provider", data_type=DataType.TEXT, skip_vectorization=True)),
+            ("embedding_dim", Property(name="embedding_dim", data_type=DataType.INT)),
+            ("embedding_version", Property(name="embedding_version", data_type=DataType.TEXT, skip_vectorization=True)),
+            ("embedding_created_at", Property(name="embedding_created_at", data_type=DataType.DATE, skip_vectorization=True)),
+        ]
+        for name, prop in additions:
+            if name not in existing_props:
+                collection.config.add_property(prop)
+                logger.info("Propriété {} ajoutée à {}.", name, COLLECTION_NAME)
 
     def reset_collection(self) -> None:
         """Supprime et recrée la collection (dev / tests)."""
@@ -192,8 +248,15 @@ class WeaviateStore:
         self,
         chunks: list[dict],
         vectors: list[list[float]],
+        title_vectors: list[list[float]] | None = None,
     ) -> int:
-        """Insère des chunks avec leurs vecteurs dans Weaviate.
+        """Insère des chunks avec leurs named vectors dans Weaviate (RagChunkV2).
+
+        Parameters
+        ----------
+        chunks:       Liste de dicts représentant les propriétés Weaviate.
+        vectors:      Vecteurs de contenu (`content_vector`), un par chunk.
+        title_vectors: Vecteurs de titre (`title_vector`), un par chunk (optionnel).
 
         Returns le nombre d'objets insérés avec succès.
         """
@@ -202,11 +265,13 @@ class WeaviateStore:
         failed = 0
 
         with collection.batch.dynamic() as batch:
-            for chunk, vector in zip(chunks, vectors):
-                batch.add_object(properties=chunk, vector=vector)
+            for i, (chunk, cv) in enumerate(zip(chunks, vectors)):
+                named = {CONTENT_VECTOR: cv}
+                if title_vectors and i < len(title_vectors):
+                    named[TITLE_VECTOR] = title_vectors[i]
+                batch.add_object(properties=chunk, vector=named)
                 inserted += 1
 
-        # Le batch peut avoir des erreurs silencieuses → on les log
         if hasattr(batch, "number_errors") and batch.number_errors:
             failed = batch.number_errors
             logger.warning("{} erreurs lors de l'insertion.", failed)
@@ -233,6 +298,7 @@ class WeaviateStore:
         top_k: int = 20,
         alpha: float = 0.5,
         source: str | None = None,
+        target_vector: str = CONTENT_VECTOR,
     ) -> list[dict]:
         """Recherche hybride BM25 + dense (HNSW).
 
@@ -241,19 +307,20 @@ class WeaviateStore:
         query:
             Texte brut de la question (utilisé par BM25).
         query_vector:
-            Vecteur dense de la question (utilisé par HNSW).
+            Vecteur dense de la question.
         top_k:
-            Nombre de résultats à retourner avant reranking (recommandé : 20).
+            Nombre de résultats à retourner.
         alpha:
-            Pondération : 0.0 = BM25 pur, 1.0 = dense pur, 0.5 = équilibré.
+            Pondération : 0.0 = BM25 pur, 1.0 = dense pur.
         source:
             Filtre optionnel sur le chemin absolu du document.
+        target_vector:
+            Named vector cible (CONTENT_VECTOR ou TITLE_VECTOR).
         """
         from datetime import datetime, timezone
         self._ensure_connected()
         collection = self._client.collections.get(COLLECTION_NAME)
 
-        # Exclure les documents expirés (validity_date < aujourd'hui)
         today_rfc3339 = datetime.now(timezone.utc).strftime("%Y-%m-%dT00:00:00Z")
         validity_filter = (
             Filter.by_property("validity_date").is_none(True)
@@ -272,6 +339,7 @@ class WeaviateStore:
             fusion_type=HybridFusion.RELATIVE_SCORE,
             return_metadata=MetadataQuery(score=True, explain_score=False),
             filters=filters,
+            target_vector=target_vector,
         )
 
         docs = []
@@ -288,6 +356,7 @@ class WeaviateStore:
         query_vector: list[float],
         top_k: int = 20,
         source: str | None = None,
+        target_vector: str = CONTENT_VECTOR,
     ) -> list[dict]:
         """Recherche dense pure (conservée pour compatibilité / tests)."""
         collection = self._client.collections.get(COLLECTION_NAME)
@@ -298,6 +367,7 @@ class WeaviateStore:
             limit=top_k,
             return_metadata=MetadataQuery(distance=True),
             filters=filters,
+            target_vector=target_vector,
         )
 
         docs = []

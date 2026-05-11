@@ -5,6 +5,7 @@ Deux modes selon ce qui est installé :
   • simple         (fallback) — extraction page par page avec PyMuPDF + découpage naïf
 
 Embeddings : OpenAI Embeddings (text-embedding-3-small, text-embedding-3-large, etc.)
+Pipeline Onyx-aligned : content_vector séparé de title_vector, enrichissement invisible.
 """
 from __future__ import annotations
 
@@ -15,7 +16,10 @@ from typing import Callable
 
 from loguru import logger
 
-# ── embedding helper (Modèle d'embedding) ────────────────────────────────────────────────
+from rag_agent.retrieval.content_enrichment import enrich_chunk_for_embedding
+
+
+# ── embedding helper ──────────────────────────────────────────────────────────
 
 def _embed_texts(
     texts: list[str],
@@ -24,23 +28,164 @@ def _embed_texts(
     batch_size: int = 2048,
     progress_cb: Callable[[str], None] | None = None,
 ) -> list[list[float]]:
-    """Encode une liste de textes en vecteurs via l'API OpenAI Embeddings.
-
-    openai.embeddings.create accepte jusqu'à 2048 textes par appel.
-    Les textes vides sont remplacés par un espace pour éviter les erreurs.
-    """
+    """Encode une liste de passages en vecteurs."""
     from llm.embedder import EmbeddingModel
 
     embedder = EmbeddingModel(
         model=model,
         api_key=api_key,
-        # Timeout will use default, batch size is handled inside EmbeddingModel automatically
     )
-    
+
     if progress_cb:
         progress_cb(f"  Embedding de {len(texts)} chunks…")
-        
-    return embedder.embed_batch(texts)
+
+    return embedder.embed_passages(texts)
+
+
+def _embedding_provider(model: str) -> str:
+    from llm.embedder import EmbeddingModel
+
+    return EmbeddingModel(model=model).provider.value
+
+
+def _embed_chunk_field_with_failure_handling(
+    chunks: list[dict],
+    field: str,
+    api_key: str,
+    model: str,
+    progress_cb: Callable[[str], None] | None = None,
+) -> list[list[float]]:
+    """Embed a chunk field with Onyx-style fallback from batch to source/chunk."""
+    texts = [chunk.get(field) or " " for chunk in chunks]
+    try:
+        vectors = _embed_texts(texts, api_key, model, progress_cb=progress_cb)
+        if len(vectors) != len(texts):
+            raise RuntimeError(
+                f"Embedding count mismatch for field {field}: {len(vectors)} != {len(texts)}"
+            )
+        return vectors
+    except Exception as batch_exc:
+        logger.warning(
+            "Embedding batch failed for field {}: {}. Retrying by source.",
+            field,
+            batch_exc,
+        )
+
+    vectors_by_pos: list[list[float] | None] = [None] * len(chunks)
+    positions_by_source: dict[str, list[int]] = {}
+    for pos, chunk in enumerate(chunks):
+        positions_by_source.setdefault(chunk.get("source") or "", []).append(pos)
+
+    for source, positions in positions_by_source.items():
+        source_texts = [texts[pos] for pos in positions]
+        try:
+            source_vectors = _embed_texts(
+                source_texts, api_key, model, progress_cb=progress_cb
+            )
+            if len(source_vectors) != len(source_texts):
+                raise RuntimeError(
+                    "Embedding count mismatch for "
+                    f"source {source} field {field}: "
+                    f"{len(source_vectors)} != {len(source_texts)}"
+                )
+            for pos, vector in zip(positions, source_vectors):
+                vectors_by_pos[pos] = vector
+            continue
+        except Exception as source_exc:
+            logger.warning(
+                "Embedding retry failed for source {} field {}: {}. Retrying by chunk.",
+                source,
+                field,
+                source_exc,
+            )
+
+        for pos in positions:
+            chunk = chunks[pos]
+            try:
+                vectors_by_pos[pos] = _embed_texts(
+                    [texts[pos]], api_key, model, progress_cb=progress_cb
+                )[0]
+            except Exception as chunk_exc:
+                logger.error(
+                    "Embedding failed for source={} chunk_index={} field={}: {}",
+                    chunk.get("source"),
+                    chunk.get("chunk_index"),
+                    field,
+                    chunk_exc,
+                )
+                raise RuntimeError(
+                    "Embedding failed for "
+                    f"source={chunk.get('source')} "
+                    f"chunk_index={chunk.get('chunk_index')} field={field}"
+                ) from chunk_exc
+
+    if any(vector is None for vector in vectors_by_pos):
+        raise RuntimeError(f"Embedding failed to produce all vectors for field {field}")
+    return [vector for vector in vectors_by_pos if vector is not None]
+
+
+def _prepare_chunks_for_embedding(
+    chunks: list[dict],
+    embedding_model: str,
+) -> None:
+    provider = _embedding_provider(embedding_model)
+    for chunk in chunks:
+        enrich_chunk_for_embedding(
+            chunk,
+            embedding_model=embedding_model,
+            embedding_provider=provider,
+        )
+
+
+def _embed_content_and_titles(
+    chunks: list[dict],
+    api_key: str,
+    embedding_model: str,
+    progress_cb: Callable[[str], None] | None = None,
+) -> tuple[list[list[float]], list[list[float]]]:
+    """Génère content_vectors et title_vectors avec cache de titres (Onyx pattern)."""
+    _prepare_chunks_for_embedding(chunks, embedding_model)
+
+    if progress_cb:
+        progress_cb("Embedding du contenu enrichi des chunks...")
+    content_vectors = _embed_chunk_field_with_failure_handling(
+        chunks, "embedding_content", api_key, embedding_model, progress_cb
+    )
+
+    # Cache titres — un seul embedding par titre unique (Onyx embedder.py:180)
+    unique_title_chunks: list[dict] = []
+    seen_titles: set[str] = set()
+    for chunk in chunks:
+        title_text = chunk.get("title_text") or "document"
+        if title_text not in seen_titles:
+            seen_titles.add(title_text)
+            unique_title_chunks.append(
+                {
+                    "source": chunk.get("source", ""),
+                    "chunk_index": chunk.get("chunk_index", -1),
+                    "title_text": title_text,
+                }
+            )
+
+    if progress_cb:
+        progress_cb(f"Embedding de {len(unique_title_chunks)} titre(s) unique(s)...")
+    unique_title_vectors = _embed_chunk_field_with_failure_handling(
+        unique_title_chunks, "title_text", api_key, embedding_model, progress_cb
+    )
+    title_vector_by_text = {
+        chunk["title_text"]: vector
+        for chunk, vector in zip(unique_title_chunks, unique_title_vectors)
+    }
+    title_vectors = [
+        title_vector_by_text[chunk.get("title_text") or "document"] for chunk in chunks
+    ]
+
+    if content_vectors:
+        embedding_dim = len(content_vectors[0])
+        for chunk in chunks:
+            chunk["embedding_dim"] = embedding_dim
+
+    return content_vectors, title_vectors
 
 
 # ── mode openingestion ────────────────────────────────────────────────────────
@@ -53,15 +198,13 @@ def _ingest_with_openingestion(
     api_key: str,
     embedding_model: str,
     progress_cb: Callable[[str], None],
-) -> tuple[list[dict], list[list[float]]]:
+    entity: str | None = None,
+    validity_date: str | None = None,
+) -> tuple[list[dict], list[list[float]], list[list[float]]]:
     from openingestion import ingest
 
     progress_cb(f"Parsing '{pdf_path.name}' avec {parser} / {strategy}…")
 
-    # Dossier output isolé par ingestion → évite toute collision si deux tâches
-    # tournent en parallèle ou si un retry intervient pendant une autre ingestion.
-    # MinerU 3.x écrit toujours dans output_dir/doc0/auto/ ; sans isolation,
-    # le dossier est écrasé entre deux tâches et la seconde lit le contenu de la première.
     mineru_tmp = Path(tempfile.mkdtemp(prefix="mineru_out_"))
     try:
         chunks = ingest(
@@ -83,11 +226,8 @@ def _ingest_with_openingestion(
         page_idx = c.position_int[0][0] if c.position_int else 0
         extras   = c.extras or {}
 
-        # Légendes et notes de bas de page (listes de strings → JSON)
         captions  = extras.get("captions",  getattr(c, "captions",  [])) or []
         footnotes = extras.get("footnotes", getattr(c, "footnotes", [])) or []
-
-        # HTML enrichi pour tableaux / équations
         html = extras.get("html", getattr(c, "html", "")) or ""
 
         chunk_dicts.append({
@@ -105,24 +245,21 @@ def _ingest_with_openingestion(
             "html":          html,
             "captions_json": _json.dumps(captions,  ensure_ascii=False),
             "footnotes_json":_json.dumps(footnotes, ensure_ascii=False),
-            # coordonnées de tous les blocs du chunk : [[page, x0, y0, x1, y1], ...]
             "bboxes_json":   _json.dumps(c.position_int or [], ensure_ascii=False),
         })
 
-    # Stratégie Onyx : Enrichissement invisible du texte envoyé à l'embedder
-    texts = []
-    for d in chunk_dicts:
-        # On préfixe le titre de la section pour donner un maximum de contexte au vecteur
-        title_prefix = f"Titre de la section : {d['title_path']}\n\n" if d.get("title_path") else ""
-        
-        # Si vous générez plus tard un "doc_summary" ou "chunk_context", concaténez-le ici a partir du contextual rag de openingestion !
-        enriched_text = f"{title_prefix}{d['page_content']}"
-        texts.append(enriched_text)
+    # Injecter les métadonnées métier avant enrichissement
+    for chunk in chunk_dicts:
+        chunk["entity"] = entity or ""
+        if validity_date:
+            chunk["validity_date"] = validity_date
 
     progress_cb("Embedding des chunks (Modèle d'embedding)…")
-    vectors = _embed_texts(texts, api_key, embedding_model, progress_cb=progress_cb)
+    content_vectors, title_vectors = _embed_content_and_titles(
+        chunk_dicts, api_key, embedding_model, progress_cb
+    )
 
-    return chunk_dicts, vectors
+    return chunk_dicts, content_vectors, title_vectors
 
 
 # ── mode fallback (PyMuPDF) ───────────────────────────────────────────────────
@@ -134,7 +271,9 @@ def _ingest_simple(
     embedding_model: str,
     chunk_size: int = 800,
     progress_cb: Callable[[str], None] | None = None,
-) -> tuple[list[dict], list[list[float]]]:
+    entity: str | None = None,
+    validity_date: str | None = None,
+) -> tuple[list[dict], list[list[float]], list[list[float]]]:
     try:
         import fitz
     except ImportError:
@@ -153,7 +292,6 @@ def _ingest_simple(
 
     _cb(f"{len(raw_pages)} pages avec du texte.")
 
-    # Découpage naïf par blocs de ~chunk_size caractères
     chunk_dicts: list[dict] = []
     idx = 0
     for page_idx, text in raw_pages:
@@ -170,23 +308,30 @@ def _ingest_simple(
                 "chunk_index":   idx,
                 "reading_order": idx,
                 "prev_chunk":    idx - 1,
-                "next_chunk":    -1,   # inconnu avant la fin
+                "next_chunk":    -1,
                 "page_idx":      page_idx,
                 "token_count":   len(block) // 4,
                 "html":          "",
                 "captions_json": "[]",
                 "footnotes_json":"[]",
-                # pas de bbox en mode fallback simple (extraction PyMuPDF page-level)
                 "bboxes_json":   "[]",
             })
             idx += 1
 
     _cb(f"{len(chunk_dicts)} chunks créés (mode simple).")
-    texts = [d["page_content"] for d in chunk_dicts]
-    _cb("Embedding des chunks (Modèle d'embedding)…")
-    vectors = _embed_texts(texts, api_key, embedding_model, progress_cb=_cb)
 
-    return chunk_dicts, vectors
+    # Injecter les métadonnées métier avant enrichissement
+    for chunk in chunk_dicts:
+        chunk["entity"] = entity or ""
+        if validity_date:
+            chunk["validity_date"] = validity_date
+
+    _cb("Embedding des chunks (Modèle d'embedding)…")
+    content_vectors, title_vectors = _embed_content_and_titles(
+        chunk_dicts, api_key, embedding_model, _cb
+    )
+
+    return chunk_dicts, content_vectors, title_vectors
 
 
 # ── point d'entrée public ─────────────────────────────────────────────────────
@@ -237,38 +382,57 @@ def ingest_pdf(
     """
     _cb = progress_cb or (lambda msg: logger.info(msg))
     source = source_override or str(pdf_path.resolve())
+    rfc3339_date: str | None = f"{validity_date}T00:00:00Z" if validity_date else None
 
     # Supprimer les éventuels chunks existants pour ce fichier
     weaviate_store.delete_source(source)
 
     if force_simple:
-        chunk_dicts, vectors = _ingest_simple(
-            pdf_path, source, api_key, embedding_model, progress_cb=_cb
+        chunk_dicts, content_vectors, title_vectors = _ingest_simple(
+            pdf_path,
+            source,
+            api_key,
+            embedding_model,
+            progress_cb=_cb,
+            entity=entity,
+            validity_date=rfc3339_date,
         )
     else:
         try:
-            chunk_dicts, vectors = _ingest_with_openingestion(
+            chunk_dicts, content_vectors, title_vectors = _ingest_with_openingestion(
                 pdf_path, source, parser, chunking_strategy,
                 api_key, embedding_model, _cb,
+                entity=entity,
+                validity_date=rfc3339_date,
             )
         except ImportError:
             logger.warning(
                 "openingestion introuvable — passage en mode simple (PyMuPDF)."
             )
             _cb("⚠️ openingestion non installé, mode simple activé.")
-            chunk_dicts, vectors = _ingest_simple(
-                pdf_path, source, api_key, embedding_model, progress_cb=_cb
+            chunk_dicts, content_vectors, title_vectors = _ingest_simple(
+                pdf_path,
+                source,
+                api_key,
+                embedding_model,
+                progress_cb=_cb,
+                entity=entity,
+                validity_date=rfc3339_date,
             )
 
     _cb("Stockage dans Weaviate…")
-    # Injecter les métadonnées métier sur chaque chunk
-    # validity_date converti en RFC3339 pour Weaviate DataType.DATE
-    rfc3339_date: str | None = f"{validity_date}T00:00:00Z" if validity_date else None
+    # Finaliser le versioning avec embedding_dim connu
+    provider = _embedding_provider(embedding_model)
+    dim = len(content_vectors[0]) if content_vectors else None
     for chunk in chunk_dicts:
-        chunk["entity"] = entity or ""
-        if rfc3339_date:
-            chunk["validity_date"] = rfc3339_date
-    n = weaviate_store.insert_chunks(chunk_dicts, vectors)
+        enrich_chunk_for_embedding(
+            chunk,
+            embedding_model=embedding_model,
+            embedding_provider=provider,
+            embedding_dim=dim,
+        )
+
+    n = weaviate_store.insert_chunks(chunk_dicts, content_vectors, title_vectors)
     _cb(f"✅ {n} chunks indexés pour '{pdf_path.name}'.")
     return n
 
@@ -323,26 +487,21 @@ def ingest_jsonl(
 
     _cb(f"{len(raw_lines)} lignes lues.")
 
-    # Détermine la source canonique
     first_source = raw_lines[0].get("source", str(jsonl_path))
     source = source_override or first_source
 
-    # Supprime les éventuels chunks existants pour cette source
     weaviate_store.delete_source(source)
 
     chunk_dicts: list[dict] = []
     for raw in raw_lines:
         extras = raw.get("extras") or {}
 
-        # page_idx depuis position_int (liste de tuples [page, x0, y0, x1, y1])
         pos = raw.get("position_int") or []
         page_idx = int(pos[0][0]) if pos and pos[0] else 0
 
-        # Légendes : inferred_caption stocké dans extras
         inferred = extras.get("inferred_caption", "")
         captions: list[str] = [inferred] if inferred else []
 
-        # HTML enrichi (tableaux/équations)
         html: str = extras.get("html", "") or ""
 
         chunk_dicts.append({
@@ -360,21 +519,15 @@ def ingest_jsonl(
             "html":          html,
             "captions_json": _json.dumps(captions, ensure_ascii=False),
             "footnotes_json": "[]",
-            # coordonnées de tous les blocs du chunk : [[page, x0, y0, x1, y1], ...]
             "bboxes_json":   _json.dumps(pos, ensure_ascii=False),
         })
 
-    # Stratégie Onyx : Enrichissement invisible du texte envoyé à l'embedder
-    texts = []
-    for d in chunk_dicts:
-        title_prefix = f"Titre de la section : {d['title_path']}\n\n" if d.get("title_path") else ""
-        enriched_text = f"{title_prefix}{d['page_content']}"
-        texts.append(enriched_text)
-
     _cb("Embedding des chunks (Modèle d'embedding)…")
-    vectors = _embed_texts(texts, api_key, embedding_model, progress_cb=_cb)
+    content_vectors, title_vectors = _embed_content_and_titles(
+        chunk_dicts, api_key, embedding_model, _cb
+    )
 
     _cb("Stockage dans Weaviate…")
-    n = weaviate_store.insert_chunks(chunk_dicts, vectors)
+    n = weaviate_store.insert_chunks(chunk_dicts, content_vectors, title_vectors)
     _cb(f"✅ {n} chunks indexés pour '{jsonl_path.name}'.")
     return n

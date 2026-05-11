@@ -27,7 +27,7 @@ class AggregateTool:
         filters: Optional[dict] = None,
     ) -> UnifiedRAGState:
         """Exécute une agrégation et met à jour state['environment']."""
-        colls = collection_names or state.get("collection_names") or ["RagChunk"]
+        colls = collection_names or state.get("collection_names") or ["RagChunkV2"]
         try:
             if self.weaviate_store is not None:
                 agg_result = self._aggregate_weaviate(
