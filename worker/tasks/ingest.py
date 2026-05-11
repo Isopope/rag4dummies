@@ -133,6 +133,8 @@ def ingest_pdf_task(
     parser: str    = "docling",
     strategy: str  = "by_token",
     filename: str  = "",
+    entity: str | None = None,
+    validity_date: str | None = None,
 ) -> dict:
     """
     Télécharge le PDF depuis le DocumentStore, l'ingère dans Weaviate et met
@@ -144,6 +146,8 @@ def ingest_pdf_task(
     parser     : docling | mineru | simple
     strategy   : by_token | by_sentence | by_block
     filename   : nom d'affichage (pour les logs)
+    entity     : métadonnée métier conservée côté DB
+    validity_date : date de validité métier conservée côté DB
 
     Retourne
     --------
@@ -168,12 +172,14 @@ def ingest_pdf_task(
         n = _ingest_pdf(
             pdf_path          = tmp_path,
             weaviate_store    = store,
-            openai_key        = cfg.openai_key,
+            api_key           = cfg.openai_key,
             embedding_model   = cfg.embedding_model,
             chunking_strategy = strategy,
             parser            = parser if parser != "simple" else "docling",
             force_simple      = (parser == "simple"),
             source_override   = object_key,
+            entity            = entity,
+            validity_date     = validity_date,
         )
 
         # 5. Marquer INDEXED en DB
@@ -250,7 +256,7 @@ def ingest_jsonl_task(
         n = _ingest_jsonl(
             jsonl_path      = tmp_path,
             weaviate_store  = store,
-            openai_key      = cfg.openai_key,
+            api_key         = cfg.openai_key,
             embedding_model = cfg.embedding_model,
             source_override = source_override,
         )

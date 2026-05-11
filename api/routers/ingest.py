@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import os
+import uuid
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
@@ -79,31 +80,49 @@ async def ingest_pdf(
     # 1. Upload dans l'object store
     doc_store.upload(content, object_key, content_type="application/pdf")
 
-    # 2. Dispatcher la tâche Celery
-    from worker.queues import INGEST_QUEUE, RagCeleryPriority
-    celery = get_celery_app()
-    job = celery.send_task(
-        "rag.tasks.ingest_pdf",
-        args     = [object_key, parser, strategy, filename],
-        kwargs   = {"entity": entity, "validity_date": validity_date},
-        queue    = INGEST_QUEUE,
-        priority = int(RagCeleryPriority.HIGH),
-    )
+    task_id = str(uuid.uuid4())
 
-    # 3. Enregistrer en DB (PENDING, task_id)
+    # 2. Enregistrer en DB avant dispatch pour éviter une course avec le worker
     from db.repositories.document import DocumentRepository
     repo = DocumentRepository(db)
-    await repo.upsert(object_key, parser=parser, strategy=strategy, task_id=job.id,
-                      entity=entity, validity_date=validity_date)
+    await repo.upsert(
+        object_key,
+        parser=parser,
+        strategy=strategy,
+        task_id=task_id,
+        entity=entity,
+        validity_date=validity_date,
+    )
     await db.commit()
+
+    # 3. Dispatcher la tâche Celery avec l'id déjà persisté en DB
+    from worker.queues import INGEST_QUEUE, RagCeleryPriority
+    celery = get_celery_app()
+    try:
+        celery.send_task(
+            "rag.tasks.ingest_pdf",
+            args     = [object_key, parser, strategy, filename],
+            kwargs   = {"entity": entity, "validity_date": validity_date},
+            task_id  = task_id,
+            queue    = INGEST_QUEUE,
+            priority = int(RagCeleryPriority.HIGH),
+        )
+    except Exception as exc:
+        await repo.mark_error(object_key, f"Dispatch Celery échoué : {exc}")
+        await db.commit()
+        logger.exception("Dispatch Celery échoué pour '{}'", filename)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Impossible de planifier l'ingestion.",
+        )
 
     # 4. URL présignée immédiate (disponible dès l'upload)
     expires  = int(os.getenv("MINIO_PRESIGN_EXPIRES", "3600"))
     pdf_url  = doc_store.presigned_url(object_key, expires_seconds=expires)
 
-    logger.info("PDF '{}' dispatché — task_id={}", filename, job.id)
+    logger.info("PDF '{}' dispatché — task_id={}", filename, task_id)
     return IngestJobResponse(
-        task_id  = job.id,
+        task_id  = task_id,
         status   = "pending",
         source   = object_key,
         filename = filename,
@@ -158,5 +177,3 @@ async def ingest_jsonl(
         source   = object_key,
         filename = filename,
     )
-
-

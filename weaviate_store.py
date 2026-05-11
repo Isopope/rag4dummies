@@ -191,7 +191,7 @@ class WeaviateStore:
                 Property(name="validity_date", data_type=DataType.DATE, skip_vectorization=True),
                 Property(name="embedding_model", data_type=DataType.TEXT, skip_vectorization=True),
                 Property(name="embedding_provider", data_type=DataType.TEXT, skip_vectorization=True),
-                Property(name="embedding_dim", data_type=DataType.TEXT, skip_vectorization=True),
+                Property(name="embedding_dim", data_type=DataType.INT, skip_vectorization=True),
                 Property(name="embedding_version", data_type=DataType.TEXT, skip_vectorization=True),
                 Property(name="embedding_created_at", data_type=DataType.DATE, skip_vectorization=True)
             ],
@@ -275,9 +275,16 @@ class WeaviateStore:
         if hasattr(batch, "number_errors") and batch.number_errors:
             failed = batch.number_errors
             logger.warning("{} erreurs lors de l'insertion.", failed)
+            # Log le détail de la première erreur pour faciliter le diagnostic
+            failed_objects = getattr(batch, "failed_objects", None)
+            if failed_objects:
+                first = failed_objects[0]
+                err_msg = getattr(first, "message", None) or getattr(first, "error", str(first))
+                logger.error("Détail première erreur Weaviate : {}", err_msg)
 
-        logger.info("Inséré {} chunk(s) dans Weaviate.", inserted - failed)
-        return inserted - failed
+        successful = max(0, inserted - failed)
+        logger.info("Inséré {} chunk(s) dans Weaviate.", successful)
+        return successful
 
     def delete_source(self, source: str) -> int:
         """Supprime tous les chunks associés à une source donnée."""
