@@ -7,6 +7,12 @@ from .content_enrichment import (
     generate_enriched_content_for_chunk_text,
     generate_title_text,
 )
+from .ragas_eval import (
+    RetrievalEvalSample,
+    aggregate_numeric_scores,
+    build_retrieval_dataset_rows,
+    evaluate_retrieval_with_ragas,
+)
 
 __all__ = [
     "EMBEDDING_VERSION",
@@ -14,4 +20,8 @@ __all__ = [
     "generate_enriched_content_for_chunk_embedding",
     "generate_enriched_content_for_chunk_text",
     "generate_title_text",
+    "RetrievalEvalSample",
+    "build_retrieval_dataset_rows",
+    "aggregate_numeric_scores",
+    "evaluate_retrieval_with_ragas",
 ]

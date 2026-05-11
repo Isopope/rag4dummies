@@ -130,3 +130,35 @@ rag_poc/
 docker compose down          # arrêt (données conservées)
 docker compose down -v       # arrêt + suppression des données
 ```
+
+---
+
+## Évaluer le retrieval avec RAGAS
+
+Le package expose un utilitaire dédié dans `rag_agent.retrieval` :
+
+- `RetrievalEvalSample`
+- `evaluate_retrieval_with_ragas(...)`
+
+Exemple minimal :
+
+```python
+from rag_agent.retrieval import RetrievalEvalSample, evaluate_retrieval_with_ragas
+from rag_agent.tools import QueryTool
+
+samples = [
+    RetrievalEvalSample(
+        query="Quel est le budget 2024 ?",
+        reference="Le budget 2024 est ...",
+    )
+]
+
+report = evaluate_retrieval_with_ragas(
+    query_tool=QueryTool(weaviate_store=store, embedder=embedder),
+    samples=samples,
+    top_k=5,
+    llm=ragas_llm,  # requis pour les métriques par défaut
+)
+
+print(report["aggregate_scores"])
+```
