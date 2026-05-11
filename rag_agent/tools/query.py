@@ -9,7 +9,7 @@ QueryTool intègre la logique de production de rag_pipeline.py :
 """
 from __future__ import annotations
 
-import asyncio
+import hashlib
 import json
 import time
 from datetime import datetime
@@ -45,6 +45,61 @@ def weaviate_with_retry(fn: Callable, *args, max_retries: int = 3, base_delay: f
     raise RuntimeError(f"Weaviate indisponible après {max_retries} tentatives") from last_exc
 
 
+def _safe_score(value: Any) -> float:
+    """Convertit un score arbitraire en float comparable."""
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _normalize_chunk_index(value: Any) -> Optional[int]:
+    """Normalise chunk_index en entier si possible."""
+    try:
+        if value in (None, ""):
+            return None
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _fingerprint_doc(doc: dict[str, Any]) -> str:
+    """Construit une empreinte stable pour les documents incomplets."""
+    fingerprint_parts = [
+        str(doc.get("source", "")),
+        str(doc.get("title_path", "")),
+        str(doc.get("page_idx", "")),
+        str(doc.get("kind", "")),
+        str(doc.get("page_content", "")),
+    ]
+    payload = "\x1f".join(part.strip() for part in fingerprint_parts)
+    return hashlib.sha1(payload.encode("utf-8")).hexdigest()
+
+
+def _doc_key(doc: dict[str, Any]) -> tuple[str, str]:
+    """Retourne une clé de déduplication robuste, stable même si source/index manquent."""
+    for identifier_field in ("uuid", "id", "_id"):
+        identifier = str(doc.get(identifier_field, "") or "").strip()
+        if identifier:
+            return (identifier_field, identifier)
+
+    source = str(doc.get("source", "") or "").strip()
+    chunk_index = _normalize_chunk_index(doc.get("chunk_index"))
+    if source and chunk_index is not None:
+        return ("source_chunk", f"{source}:{chunk_index}")
+
+    title_path = str(doc.get("title_path", "") or "").strip()
+    page_idx = str(doc.get("page_idx", "") or "").strip()
+    return ("fallback", f"{source}|{title_path}|{page_idx}|{_fingerprint_doc(doc)}")
+
+
+def _doc_rank_score(doc: dict[str, Any]) -> float:
+    """Retourne le score de classement le plus pertinent disponible."""
+    if "_rrf_score" in doc:
+        return _safe_score(doc.get("_rrf_score"))
+    return _safe_score(doc.get("_score"))
+
+
 def weighted_rrf(
     ranked_results: list[list[dict]],
     weights: list[float],
@@ -55,20 +110,32 @@ def weighted_rrf(
     Formule : score(doc) = Σ weight_i / (k + rank_i)
     Port exact de rag_pipeline.py:195-219.
     """
-    rrf_scores: dict[tuple[str, int], float] = {}
-    best_doc:   dict[tuple[str, int], dict]  = {}
+    if len(ranked_results) != len(weights):
+        raise ValueError(
+            "weighted_rrf attend autant de listes de résultats que de poids "
+            f"({len(ranked_results)} != {len(weights)})"
+        )
+
+    rrf_scores: dict[tuple[str, str], float] = {}
+    best_doc: dict[tuple[str, str], dict] = {}
+    best_source_scores: dict[tuple[str, str], float] = {}
 
     for result_list, weight in zip(ranked_results, weights):
         for rank, doc in enumerate(result_list, start=1):
-            key = (doc.get("source", ""), int(doc.get("chunk_index", -1)))
+            key = _doc_key(doc)
             rrf_scores[key] = rrf_scores.get(key, 0.0) + weight / (k + rank)
-            if key not in best_doc:
+            source_score = _safe_score(doc.get("_source_score", doc.get("_score")))
+            if key not in best_doc or source_score > best_source_scores[key]:
                 best_doc[key] = doc
-            elif (doc.get("_score") or 0.0) > (best_doc[key].get("_score") or 0.0):
-                best_doc[key] = doc
+                best_source_scores[key] = source_score
 
     return [
-        {**best_doc[key], "_score": rrf_scores[key]}
+        {
+            **best_doc[key],
+            "_source_score": best_source_scores[key],
+            "_rrf_score": rrf_scores[key],
+            "_score": rrf_scores[key],
+        }
         for key in sorted(rrf_scores, key=lambda x: rrf_scores[x], reverse=True)
     ]
 
@@ -78,19 +145,19 @@ def combine_chunks(chunk_sets: list[list[dict]]) -> list[dict]:
 
     Port exact de rag_pipeline.py:158-177.
     """
-    unique: dict[tuple[str, int], dict] = {}
+    unique: dict[tuple[str, str], dict] = {}
     for chunk in (c for cs in chunk_sets for c in cs):
-        key = (chunk.get("source", ""), int(chunk.get("chunk_index", -1)))
+        key = _doc_key(chunk)
         if key not in unique:
             unique[key] = chunk
         else:
-            if (chunk.get("_score") or 0) > (unique[key].get("_score") or 0):
+            if _doc_rank_score(chunk) > _doc_rank_score(unique[key]):
                 merged = {**chunk}
-                for k, v in unique[key].items():
-                    if k.startswith("_") and k not in merged:
-                        merged[k] = v
+                for meta_key, value in unique[key].items():
+                    if meta_key.startswith("_") and meta_key not in merged:
+                        merged[meta_key] = value
                 unique[key] = merged
-    return sorted(unique.values(), key=lambda d: d.get("_score") or 0, reverse=True)
+    return sorted(unique.values(), key=_doc_rank_score, reverse=True)
 
 
 def deduplicate_queries(queries: list[tuple[str, float]]) -> list[tuple[str, float]]:
@@ -119,6 +186,8 @@ class QueryTool:
 
     _CHUNK_INDEX_MIN = 0
     _CHUNK_INDEX_MAX = 100_000
+    _CONTENT_VECTOR="content_vector"
+    _TITLE_VECTOR="title_vector"
 
     def __init__(
         self,
@@ -129,6 +198,30 @@ class QueryTool:
         self.embedder       = embedder
         self.name           = "query"
 
+    def _embed_query(self, text: str) -> list[float]:
+        if self.embedder is None:
+            raise RuntimeError("Un embedder est requis pour l'encodage des requêtes")
+        normalized = text.strip() or " "
+
+        embed_query = getattr(self.embedder, "embed_query", None)
+        if callable(embed_query):
+            return embed_query(normalized)
+
+        encode_query = getattr(self.embedder, "encode_query", None)
+        if callable(encode_query):
+            return encode_query(normalized)
+
+        if callable(self.embedder):
+            return self.embedder(normalized)
+
+        raise TypeError(
+            "Embedder incompatible : méthode embed_query/encode_query absente "
+            "et objet non callable"
+        )
+
+    def embed_query(self, text: str) -> list[float]:
+        return self._embed_query(text)
+
     def execute(
         self,
         query: str,
@@ -136,7 +229,7 @@ class QueryTool:
         top_k: int = 20,
         alpha: float = 0.5,
     ) -> list[dict]:
-        """Effectue une double recherche hybride + wRRF.
+        """Effectue une triple recherche hybride + wRRF.
 
         Retourne une liste de chunks triés par score décroissant.
         """
@@ -146,18 +239,29 @@ class QueryTool:
         if self.embedder is None:
             raise RuntimeError("Un embedder est requis pour la recherche réelle")
 
-        vector   = self.embedder(query.strip() or " ")
+        vector   = self._embed_query(query)
         sem_docs = weaviate_with_retry(
             self.weaviate_store.hybrid_search,
             query=query, query_vector=vector,
-            top_k=top_k, alpha=alpha, source=source_filter,
+            top_k=top_k, alpha=alpha, 
+            source=source_filter,
+            target_vector=self._CONTENT_VECTOR
         )
         kw_docs  = weaviate_with_retry(
             self.weaviate_store.hybrid_search,
             query=query, query_vector=vector,
-            top_k=top_k, alpha=max(0.0, round(alpha - 0.3, 1)), source=source_filter,
+            top_k=top_k, alpha=max(0.0, round(alpha - 0.3, 1)), 
+            source=source_filter,
+            target_vector=self._CONTENT_VECTOR
         )
-        return weighted_rrf([sem_docs, kw_docs], [1.0, 0.5])
+        title_docs = weaviate_with_retry(
+            self.weaviate_store.hybrid_search,
+            query=query, query_vector=vector,
+            top_k=top_k, alpha=1.0, 
+            source=source_filter, 
+            target_vector=self._TITLE_VECTOR
+        )
+        return weighted_rrf([sem_docs, kw_docs, title_docs], [1.0, 0.5, 0.8])
 
     def get_chunk_by_index(self, source: str, idx: int) -> Optional[dict]:
         """Récupère un chunk voisin par son index."""

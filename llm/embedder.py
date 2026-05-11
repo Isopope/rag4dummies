@@ -1,6 +1,5 @@
 """
 Centralized embedder functions and classes via LiteLLM.
-Inspired by Onyx's modular NLP architecture.
 """
 import threading
 import time
@@ -61,6 +60,14 @@ class EmbeddingModel:
         """Embeds a single string."""
         vectors = self.embed_batch([text], text_type=text_type)
         return vectors[0]
+
+    def embed_passages(self, texts: list[str]) -> list[list[float]]:
+        """Embeds index-time document passages."""
+        return self.embed_batch(texts, text_type=EmbedTextType.PASSAGE)
+
+    def embed_query(self, text: str) -> list[float]:
+        """Embeds an inference-time search query."""
+        return self.embed_text(text, text_type=EmbedTextType.QUERY)
 
     def embed_batch(
         self, 
@@ -133,7 +140,7 @@ class EmbeddingModel:
 def make_embedder(client: Optional[Any], model: str, timeout: float = 60.0) -> Callable[[str], list[float]]:
     """
     Backward compatible factory function.
-    Returns a function that embeds a single string as a PASSAGE.
+    Returns a function that embeds a single search query.
     """
     api_key  = getattr(client, "api_key", None) if client else None
     _base    = getattr(client, "base_url", None) if client else None
@@ -147,6 +154,6 @@ def make_embedder(client: Optional[Any], model: str, timeout: float = 60.0) -> C
     )
     
     def _embed(text: str) -> list[float]:
-        return model_instance.embed_text(text)
+        return model_instance.embed_query(text)
         
     return _embed
