@@ -485,11 +485,16 @@ def consolidate_chunks(
         except Exception:
             pass
 
-    retrieved_docs = combine_chunks([docs])
+    all_chunks = combine_chunks([docs])
+    retrieved_docs = sorted(
+        all_chunks,
+        key=lambda d: d.get("_score", 0.0),
+        reverse=True,
+    )[: rag_config.top_k_final]
     log.append(log_entry(
         "agent.loop_end",
-        f"{len(retrieved_docs)} chunks prêts pour rerank.",
-        {"current_branch": "synthesize"},
+        f"{len(all_chunks)} chunks consolidés → top {len(retrieved_docs)} retenus (score desc).",
+        {"current_branch": "synthesize", "n_total": len(all_chunks), "n_final": len(retrieved_docs)},
     ))
     return {
         "retrieved_docs":   retrieved_docs,

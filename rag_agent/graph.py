@@ -13,13 +13,12 @@ from typing import Any, Optional
 from loguru import logger
 
 
-def build_unified_graph(config, weaviate_store, cohere_client=None):
+def build_unified_graph(config, weaviate_store):
     """Compile et retourne le graphe LangGraph RAG unifié.
 
     Args:
         config:          RAGConfig — paramétrage complet du pipeline.
         weaviate_store:  Instance WeaviateStore (None → mode mock).
-        cohere_client:   Client Cohere (None → fallback LLM reranking).
     """
     from functools import partial
 
@@ -33,7 +32,6 @@ def build_unified_graph(config, weaviate_store, cohere_client=None):
     from .nodes.planning import analyze_and_plan
     from .nodes.reasoning import agent_reason, agent_action, consolidate_chunks, seed_retrieval, route_agent, route_after_action
     from .nodes.compression import compress_context
-    from .nodes.reranking import rerank
     from .nodes.generation import generate, generate_post
 
     client   = OpenAI(api_key=config.openai_key)
@@ -59,7 +57,6 @@ def build_unified_graph(config, weaviate_store, cohere_client=None):
     _action     = partial(agent_action,        query_tool=query_tool, rag_config=config, weaviate_store=weaviate_store)
     _compress   = partial(compress_context,    llm_call=llm_call,    rag_config=config)
     _consolidate= partial(consolidate_chunks,  query_tool=query_tool, rag_config=config)
-    _rerank     = partial(rerank,              llm_call=llm_call,    cohere_client=cohere_client, rag_config=config)
     _generate   = partial(generate,      llm_call=llm_call, rag_config=config)
     _post       = partial(generate_post, llm_call=llm_call, rag_config=config)
 
@@ -70,7 +67,6 @@ def build_unified_graph(config, weaviate_store, cohere_client=None):
     builder.add_node("agent_action",       _action)
     builder.add_node("compress_context",   _compress)
     builder.add_node("consolidate",        _consolidate)
-    builder.add_node("rerank",             _rerank)
     builder.add_node("generate",       _generate)
     builder.add_node("generate_post",  _post)
 
@@ -79,8 +75,7 @@ def build_unified_graph(config, weaviate_store, cohere_client=None):
     builder.add_edge("analyze_and_plan",   "seed_retrieval")
     builder.add_edge("seed_retrieval",     "agent_reason")
     builder.add_edge("compress_context",   "agent_reason")
-    builder.add_edge("consolidate",        "rerank")
-    builder.add_edge("rerank",             "generate")
+    builder.add_edge("consolidate",        "generate")
     builder.add_edge("generate",       "generate_post")
     builder.add_edge("generate_post",  END)
 
@@ -145,7 +140,7 @@ class RAGAgent:
         self._store = weaviate_store
 
         cohere_client = _init_cohere(cohere_key)
-        self._graph = build_unified_graph(self._config, weaviate_store, cohere_client)
+        self._graph = build_unified_graph(self._config, weaviate_store)
 
     # ── API publique ───────────────────────────────────────────────────────────
 
@@ -216,7 +211,7 @@ class RAGAgent:
 
         return {
             "answer":               final.get("answer",               ""),
-            "sources":              final.get("cited_docs") or final.get("reranked_docs", []),
+            "sources":              final.get("cited_docs") or final.get("retrieved_docs", []),
             "question":             question,
             "question_id":          final.get("question_id",          ""),
             "n_retrieved":          len(final.get("retrieved_docs",   [])),

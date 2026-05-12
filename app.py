@@ -409,16 +409,16 @@ if prompt:
                             elif node_name == "agent_action":
                                 status_box.update(label="🛠️ Exécution des actions...")
                                 st.markdown(f"**Action :** {message}")
-                            elif node_name == "rerank":
-                                status_box.update(label="📊 Classement (Reranking) des résultats...")
-                                st.markdown(f"**Rerank :** {message}")
+                            elif node_name == "consolidate":
+                                status_box.update(label="📊 Consolidation des résultats...")
+                                st.markdown(f"**Consolidation :** {message}")
                             elif node_name == "generate":
                                 status_box.update(label="💡 Génération de la réponse finale...")
                                 
                         if "answer" in state_update and state_update["answer"]:
                             answer = state_update["answer"]
-                        if "reranked_docs" in state_update:
-                            sources = state_update["reranked_docs"]
+                        if "retrieved_docs" in state_update:
+                            sources = state_update["retrieved_docs"]
                         if "decision_log" in state_update:
                             decision_log = state_update["decision_log"]
                             

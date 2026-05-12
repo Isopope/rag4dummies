@@ -111,9 +111,9 @@ def _build_context_entry(index: int, doc: dict) -> str:
 
 
 def generate(state: UnifiedRAGState, *, llm_call: Callable, rag_config: RAGConfig) -> dict:
-    """Nœud 5 : génère la réponse finale à partir des chunks rerankés."""
+    """Nœud 5 : génère la réponse finale à partir des chunks consolidés."""
     qid      = state["question_id"]
-    docs     = state.get("reranked_docs", [])
+    docs     = state.get("retrieved_docs", [])
     question = state["question"]
     log      = list(state.get("decision_log", []))
 
