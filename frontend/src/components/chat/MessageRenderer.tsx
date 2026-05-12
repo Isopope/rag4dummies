@@ -1,14 +1,19 @@
-import { MessageContent } from '@/types/chat';
+import { MessageContent, MessageSource } from '@/types/chat';
 import ChartRenderer from './ChartRenderer';
 import { TableDisplay } from './TableDisplay';
-import { FileCode, FileJson, Copy, Check } from 'lucide-react';
+import { FileCode, FileJson, Copy, Check, BookOpen } from 'lucide-react';
 import { useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeSanitize from 'rehype-sanitize';
+import type { Components } from 'react-markdown';
 
 interface MessageRendererProps {
   content: MessageContent;
+  /** Map citation_number → MessageSource, built from citation_infos at done event. */
+  citationSources?: Record<number, MessageSource>;
+  /** Called when a citation chip is clicked — opens the PdfGroundingModal. */
+  onOpenViewer?: (source: MessageSource) => void;
 }
 
 const CodeBlock = ({ code, language }: { code: string; language?: string }) => {
@@ -34,6 +39,88 @@ const CodeBlock = ({ code, language }: { code: string; language?: string }) => {
     </div>
   );
 };
+
+/** Badge cliquable pour les citations [[N]](url) générées par le backend. */
+const CitationChip = ({
+  num,
+  href,
+  source,
+  onOpenViewer,
+}: {
+  num: string;
+  href: string;
+  source?: MessageSource;
+  onOpenViewer?: (source: MessageSource) => void;
+}) => {
+  const handleClick = (e: React.MouseEvent<HTMLAnchorElement>) => {
+    if (source && onOpenViewer) {
+      e.preventDefault();
+      onOpenViewer(source);
+    }
+    // else: default link opens in new tab
+  };
+
+  return (
+    <a
+      href={href}
+      target="_blank"
+      rel="noopener noreferrer"
+      title={`Voir la source ${num}${source ? ` — page ${(source.pageIdx ?? 0) + 1}` : ''}`}
+      onClick={handleClick}
+      className="inline-flex items-center gap-0.5 px-1.5 py-0.5 mx-0.5 text-xs font-semibold rounded
+                 bg-primary/10 text-primary border border-primary/20
+                 hover:bg-primary/20 hover:border-primary/40 transition-colors
+                 no-underline align-baseline cursor-pointer"
+    >
+      {num}
+      <BookOpen className="w-2.5 h-2.5 opacity-60 flex-shrink-0" />
+    </a>
+  );
+};
+
+/** Composants ReactMarkdown partagés — gère citations + code blocks. */
+const makeMarkdownComponents = (
+  citationMap?: Record<number, MessageSource>,
+  onOpenViewer?: (source: MessageSource) => void,
+): Components => ({
+  pre: ({ children }) => <div className="not-prose">{children}</div>,
+  code: ({ className, children, ...props }) => {
+    const isBlock = className?.startsWith('language-');
+    if (isBlock) {
+      const lang = className?.replace('language-', '') ?? '';
+      return <CodeBlock code={String(children).replace(/\n$/, '')} language={lang} />;
+    }
+    return (
+      <code className="text-primary bg-muted px-1 py-0.5 rounded text-xs font-mono" {...props}>
+        {children}
+      </code>
+    );
+  },
+  a: ({ href, children }) => {
+    // Détecte les liens de citation [[N]](url) — le texte rendu est "[N]"
+    const text = Array.isArray(children)
+      ? children.map(String).join('')
+      : String(children ?? '');
+    const match = text.match(/^\[(\d+)\]$/);
+    if (match && href) {
+      const num = parseInt(match[1], 10);
+      const source = citationMap?.[num];
+      return (
+        <CitationChip
+          num={match[1]}
+          href={href}
+          source={source}
+          onOpenViewer={onOpenViewer}
+        />
+      );
+    }
+    return (
+      <a href={href} target="_blank" rel="noopener noreferrer">
+        {children}
+      </a>
+    );
+  },
+});
 
 const JsonBlock = ({ data }: { data: unknown }) => {
   const [copied, setCopied] = useState(false);
@@ -63,7 +150,9 @@ const JsonBlock = ({ data }: { data: unknown }) => {
   );
 };
 
-const MessageRenderer = ({ content }: MessageRendererProps) => {
+const MessageRenderer = ({ content, citationSources, onOpenViewer }: MessageRendererProps) => {
+  const mdComponents = makeMarkdownComponents(citationSources, onOpenViewer);
+
   switch (content.type) {
     case 'text':
       return (
@@ -81,21 +170,7 @@ const MessageRenderer = ({ content }: MessageRendererProps) => {
           <ReactMarkdown
             remarkPlugins={[remarkGfm]}
             rehypePlugins={[rehypeSanitize]}
-            components={{
-              pre: ({ children }) => <div className="not-prose">{children}</div>,
-              code: ({ className, children, ...props }) => {
-                const isBlock = className?.startsWith('language-');
-                if (isBlock) {
-                  const lang = className?.replace('language-', '') ?? '';
-                  return <CodeBlock code={String(children).replace(/\n$/, '')} language={lang} />;
-                }
-                return (
-                  <code className="text-primary bg-muted px-1 py-0.5 rounded text-xs font-mono" {...props}>
-                    {children}
-                  </code>
-                );
-              },
-            }}
+            components={mdComponents}
           >
             {content.text ?? ''}
           </ReactMarkdown>

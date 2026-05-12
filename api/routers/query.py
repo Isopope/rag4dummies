@@ -13,11 +13,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..auth import current_active_user, current_optional_user
 from ..deps import get_agent_for_model, get_document_store
-from ..models import BboxModel, ChunkModel, QueryRequest, QueryResponse, StreamEvent
+from ..models import BboxModel, ChunkModel, CitationInfoModel, QueryRequest, QueryResponse, StreamEvent
 from db import get_db_session
 from db.models.user import User
 from db.repositories import ConversationRepository
 from llm.usage import track_usage
+from rag_agent.utils.citations import hyperlink_citations, CitationInfo
 
 router = APIRouter()
 
@@ -181,6 +182,7 @@ async def query_stream(
         title:      str | None       = None
         question_id: str | None      = None
         usage_summary: dict | None   = None
+        raw_citation_infos: list[dict] = []
 
         while True:
             event = await queue.get()
@@ -237,10 +239,27 @@ async def query_stream(
                     except Exception as exc:
                         logger.warning("Auto-save session échoué : {}", exc)
                 # ───────────────────────────────────────────────────────────────
+                # Applique les hyperliens [[N]](url) sur la réponse finale
+                url_map = {c.source: c.pdf_url for c in sources if c.pdf_url}
+                citation_infos_objs = [
+                    CitationInfo(
+                        citation_number = ci["citation_number"],
+                        document_id     = ci["document_id"],
+                        source          = ci["source"],
+                        page_idx        = ci.get("page_idx", 0),
+                        title_path      = ci.get("title_path", ""),
+                    )
+                    for ci in raw_citation_infos
+                ]
+                answer_hl = hyperlink_citations(answer, citation_infos_objs, url_map)
+                citation_models = [
+                    CitationInfoModel(**ci) for ci in raw_citation_infos
+                ]
                 done_evt = StreamEvent(
                     type                  = "done",
-                    answer                = answer,
+                    answer                = answer_hl,
                     sources               = sources,
+                    citation_infos        = citation_models,
                     follow_up_suggestions = follow_ups,
                     conversation_title    = title,
                     question_id           = question_id,
@@ -281,6 +300,10 @@ async def query_stream(
                         doc_store,
                     )
                     evt.sources = sources
+
+                # citation_infos est capturé pour la transformation hyperlink au done
+                if state_update.get("citation_infos"):
+                    raw_citation_infos = state_update["citation_infos"]
 
                 if "follow_up_suggestions" in state_update:
                     follow_ups               = state_update["follow_up_suggestions"]

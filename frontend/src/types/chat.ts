@@ -88,6 +88,8 @@ export interface ChatMessage {
   isStreaming?: boolean;
   feedback?: MessageFeedback;
   sources?: MessageSource[];
+  /** Map citation_number → MessageSource, built from citation_infos at done event. */
+  citationSources?: Record<number, MessageSource>;
   followUpSuggestions?: string[];
   attachedImages?: AttachedImage[];
   /** Agent processing steps (populated from SSE node_update events) */

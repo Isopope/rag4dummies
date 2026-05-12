@@ -31,6 +31,15 @@ class BboxModel(BaseModel):
     y1: int = Field(..., description="Ordonnée bas")
 
 
+class CitationInfoModel(BaseModel):
+    """Métadonnées d'une citation [N] dans la réponse du LLM."""
+    citation_number: int
+    document_id: str
+    source: str
+    page_idx: int = 0
+    title_path: str = ""
+
+
 class ChunkModel(BaseModel):
     source: str
     page_content: str
@@ -80,6 +89,7 @@ class QueryResponse(BaseModel):
     question: str
     answer: str
     sources: list[ChunkModel] = []
+    citation_infos: list[CitationInfoModel] = []
     follow_up_suggestions: list[str] = []
     conversation_title: Optional[str] = None
     n_retrieved: int = 0
@@ -95,6 +105,7 @@ class StreamEvent(BaseModel):
     message: Optional[str] = None
     answer: Optional[str] = None
     sources: list[ChunkModel] = []
+    citation_infos: list[CitationInfoModel] = []
     follow_up_suggestions: list[str] = []
     conversation_title: Optional[str] = None
     question_id: Optional[str] = None

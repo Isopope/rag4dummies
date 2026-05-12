@@ -1,6 +1,6 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { streamQueryRAG, submitFeedback } from '@/lib/api';
-import type { ChunkModel, FeedbackPayload, SessionDetail, TokenUsageSummary } from '@/lib/api';
+import type { ChunkModel, CitationInfoModel, FeedbackPayload, SessionDetail, TokenUsageSummary } from '@/lib/api';
 import type {
   ChatMessage,
   MessageFeedback,
@@ -22,6 +22,31 @@ function chunkToSource(c: ChunkModel): MessageSource {
     pageIdx: c.page_idx,
     kind: c.kind,
   };
+}
+
+/** Builds a map citation_number → MessageSource from the citation_infos + raw chunks. */
+function buildCitationSources(
+  citationInfos: CitationInfoModel[],
+  chunks: ChunkModel[],
+): Record<number, MessageSource> {
+  const map: Record<number, MessageSource> = {};
+  for (const cit of citationInfos) {
+    // Prefer the chunk that matches both source path AND page_idx (exact bbox match)
+    const chunk =
+      chunks.find((c) => c.source === cit.source && c.page_idx === cit.page_idx) ??
+      chunks.find((c) => c.source === cit.source);
+    if (chunk) {
+      map[cit.citation_number] = {
+        id: `citation-${cit.citation_number}`,
+        title: cit.title_path || (cit.source.split('/').pop() ?? cit.source),
+        url: chunk.pdf_url,
+        bboxes: chunk.bboxes,
+        pageIdx: cit.page_idx,
+        kind: chunk.kind,
+      };
+    }
+  }
+  return map;
 }
 
 function buildSummary(messages: ChatMessage[]): string {
@@ -138,6 +163,7 @@ export function useRagQuery() {
 
     let accText = '';
     let finalSources: ChunkModel[] = [];
+    let finalCitationInfos: CitationInfoModel[] = [];
     let finalFollowUps: string[] = [];
     let finalTitle: string | undefined;
     let finalQuestionId: string | undefined;
@@ -173,11 +199,12 @@ export function useRagQuery() {
           );
         } else if (event.type === 'done') {
           if (event.answer != null) accText = event.answer;
-          finalSources    = event.sources ?? [];
-          finalFollowUps  = event.follow_up_suggestions ?? [];
-          finalTitle      = event.conversation_title;
-          finalQuestionId = event.question_id;
-          finalUsage      = event.usage;
+          finalSources        = event.sources ?? [];
+          finalCitationInfos  = event.citation_infos ?? [];
+          finalFollowUps      = event.follow_up_suggestions ?? [];
+          finalTitle          = event.conversation_title;
+          finalQuestionId     = event.question_id;
+          finalUsage          = event.usage;
           if (event.session_id) setSessionId(event.session_id);
         } else if (event.type === 'error') {
           throw new Error(event.error ?? 'Erreur SSE');
@@ -206,6 +233,9 @@ export function useRagQuery() {
                 contents: [{ type: 'text', text: accText }],
                 isStreaming: false,
                 sources: finalSources.length ? finalSources.map(chunkToSource) : undefined,
+                citationSources: finalCitationInfos.length
+                  ? buildCitationSources(finalCitationInfos, finalSources)
+                  : undefined,
                 followUpSuggestions: finalFollowUps.length ? finalFollowUps : undefined,
                 steps: [...steps],
                 feedbackContext,

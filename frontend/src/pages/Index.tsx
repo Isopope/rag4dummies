@@ -259,6 +259,7 @@ const Index = () => {
               onFeedback={handleFeedback}
               onRegenerate={handleRegenerate}
               onShowSources={handleShowSources}
+              onOpenViewer={(source) => setViewerSource(source)}
             />
             <ChatInput
               onSend={handleSend}

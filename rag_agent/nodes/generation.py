@@ -4,7 +4,6 @@ Port de rag_pipeline.py:975-1023 + nouveaux nœuds de langgraph_implementation.
 """
 from __future__ import annotations
 
-import re
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Callable
@@ -14,6 +13,11 @@ from loguru import logger
 from ..config import RAGConfig
 from ..llm import parse_json_llm
 from ..state import UnifiedRAGState, log_entry
+from ..utils.citations import (
+    build_citation_infos,
+    extract_cited_docs,
+    sanitize_citations,
+)
 
 
 _SYSTEM_PROMPT = """Tu es un assistant expert, précis et bienveillant.
@@ -50,34 +54,6 @@ Règles pour la section Sources :
 - Lister UNIQUEMENT les sources dont le numéro [N] apparaît réellement dans ta réponse.
 - Si aucun nom de fichier valide n'est présent, omettre la section Sources.
 - LA SECTION SOURCES EST LA DERNIÈRE CHOSE QUE TU ÉCRIS."""
-
-
-def _extract_cited_indices(answer: str) -> list[int]:
-    """Retourne la liste ordonnée (sans doublons) des indices [N] présents dans la réponse."""
-    seen: set[int] = set()
-    result: list[int] = []
-    for m in re.finditer(r"\[(\d+)\]", answer):
-        n = int(m.group(1))
-        if n not in seen:
-            seen.add(n)
-            result.append(n)
-    return result
-
-
-def _sanitize_citations(answer: str, n_docs: int) -> str:
-    """Supprime silencieusement les marqueurs [N] hors de la plage 1..n_docs.
-
-    Évite d'exposer des références fantômes inventées par le LLM.
-    Les marqueurs valides ([1] à [n_docs]) sont conservés tels quels.
-    """
-    if n_docs <= 0:
-        return re.sub(r"\[\d+\]", "", answer)
-
-    def _replace(m: re.Match) -> str:
-        n = int(m.group(1))
-        return m.group(0) if 1 <= n <= n_docs else ""
-
-    return re.sub(r"\[(\d+)\]", _replace, answer)
 
 
 def _build_context_entry(index: int, doc: dict) -> str:
@@ -151,17 +127,24 @@ def generate(state: UnifiedRAGState, *, llm_call: Callable, rag_config: RAGConfi
         log.append(log_entry("generate", msg, {"error": str(exc)}))
         return {"answer": msg, "final_response": msg, "error": msg, "decision_log": log}
 
-    answer = _sanitize_citations(answer, len(docs))
+    answer = sanitize_citations(answer, len(docs))
 
-    cited_indices = _extract_cited_indices(answer)
-    cited_docs    = [docs[i - 1] for i in cited_indices if 1 <= i <= len(docs)]
+    cited_infos = build_citation_infos(answer, docs)
+    cited_docs  = extract_cited_docs(answer, docs)
 
     log.append(log_entry(
         "generate",
         f"Réponse produite ({len(answer)} caractères, {len(cited_docs)}/{len(docs)} sources citées)",
         {"n_chars": len(answer), "n_sources": len(docs), "n_cited": len(cited_docs)},
     ))
-    return {"answer": answer, "final_response": answer, "cited_docs": cited_docs, "error": None, "decision_log": log}
+    return {
+        "answer":         answer,
+        "final_response": answer,
+        "cited_docs":     cited_docs,
+        "citation_infos": [ci.to_dict() for ci in cited_infos],
+        "error":          None,
+        "decision_log":   log,
+    }
 
 
 def generate_post(state: UnifiedRAGState, *, llm_call: Callable, rag_config: RAGConfig) -> dict:

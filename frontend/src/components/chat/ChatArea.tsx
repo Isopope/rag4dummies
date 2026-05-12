@@ -1,6 +1,6 @@
 import { useRef, useEffect, useMemo, useState, useCallback } from 'react';
 import { Bot, ArrowDown } from 'lucide-react';
-import { ChatMessage, MessageFeedback } from '@/types/chat';
+import { ChatMessage, MessageFeedback, MessageSource } from '@/types/chat';
 import MessageRenderer from './MessageRenderer';
 import FollowUpSuggestions from './FollowUpSuggestions';
 import { AssistantMessageActions } from './AssistantMessageActions';
@@ -14,6 +14,7 @@ interface ChatAreaProps {
   onFeedback?: (messageId: string, feedback: MessageFeedback) => void;
   onRegenerate?: (messageId: string, modelId?: string) => void;
   onShowSources?: (message: ChatMessage) => void;
+  onOpenViewer?: (source: MessageSource) => void;
 }
 
 /* ── Random greetings (Onyx-inspired) ──────────────────────────────── */
@@ -99,12 +100,14 @@ const AssistantMessage = ({
   onRegenerate,
   onShowSources,
   onSelectSuggestion,
+  onOpenViewer,
 }: {
   msg: ChatMessage;
   onFeedback?: (id: string, fb: MessageFeedback) => void;
   onRegenerate?: (id: string, modelId?: string) => void;
   onShowSources?: (msg: ChatMessage) => void;
   onSelectSuggestion?: (s: string) => void;
+  onOpenViewer?: (source: MessageSource) => void;
 }) => (
   <div className="flex items-start gap-3 animate-fade-in">
     {/* Agent avatar */}
@@ -132,7 +135,12 @@ const AssistantMessage = ({
       {msg.contents.some((c) => c.type === 'text' ? (c.text ?? '').length > 0 : true) && (
         <div className="text-[hsl(var(--agent-message-foreground))] select-text">
           {msg.contents.map((content, i) => (
-            <MessageRenderer key={i} content={content} />
+            <MessageRenderer
+              key={i}
+              content={content}
+              citationSources={msg.citationSources}
+              onOpenViewer={onOpenViewer}
+            />
           ))}
         </div>
       )}
@@ -167,6 +175,7 @@ const ChatArea = ({
   onFeedback,
   onRegenerate,
   onShowSources,
+  onOpenViewer,
 }: ChatAreaProps) => {
   const bottomRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -223,6 +232,7 @@ const ChatArea = ({
                 onRegenerate={msg.id === latestAssistantMessageId ? onRegenerate : undefined}
                 onShowSources={onShowSources}
                 onSelectSuggestion={onSelectSuggestion}
+                onOpenViewer={onOpenViewer}
               />
             ),
           )}

@@ -177,8 +177,13 @@ class UnifiedRAGState(TypedDict):
     """Chunks triés par pertinence après rerank. Chaque dict gagne '_rerank_score'."""
 
     cited_docs: list[dict]
-    """Sous-ensemble de reranked_docs effectivement cités [N] par le LLM dans la réponse.
+    """Sous-ensemble de retrieved_docs effectivement cités [N] par le LLM dans la réponse.
     Produit par le nœud generate. Vide si le LLM n'a placé aucun marqueur."""
+
+    citation_infos: list[dict]
+    """Métadonnées structurées de chaque citation : {citation_number, document_id, source, page_idx, title_path}.
+    Produit par le nœud generate via utils.citations.build_citation_infos().
+    Utilisé par le router pour construire les hyperliens [[N]](url)."""
 
     # ── Sortie ────────────────────────────────────────────────────────────────
     answer: str
@@ -254,6 +259,7 @@ def create_unified_state(
         retrieved_docs=[],
         reranked_docs=[],
         cited_docs=[],
+        citation_infos=[],
         answer="",
         final_response=None,
         follow_up_suggestions=[],

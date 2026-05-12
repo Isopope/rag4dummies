@@ -43,6 +43,14 @@ export interface ChunkModel {
   pdf_url?: string;
 }
 
+export interface CitationInfoModel {
+  citation_number: number;
+  document_id: string;
+  source: string;
+  page_idx: number;
+  title_path: string;
+}
+
 export interface TokenUsageBucket {
   input_tokens: number;
   output_tokens: number;
@@ -79,6 +87,7 @@ export interface QueryResponse {
   question: string;
   answer: string;
   sources: ChunkModel[];
+  citation_infos: CitationInfoModel[];
   follow_up_suggestions: string[];
   conversation_title?: string;
   n_retrieved: number;
@@ -93,6 +102,7 @@ export interface StreamEvent {
   message?: string;
   answer?: string;
   sources?: ChunkModel[];
+  citation_infos?: CitationInfoModel[];
   follow_up_suggestions?: string[];
   conversation_title?: string;
   question_id?: string;
