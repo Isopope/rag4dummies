@@ -176,6 +176,10 @@ class UnifiedRAGState(TypedDict):
     reranked_docs: list[dict]
     """Chunks triés par pertinence après rerank. Chaque dict gagne '_rerank_score'."""
 
+    cited_docs: list[dict]
+    """Sous-ensemble de reranked_docs effectivement cités [N] par le LLM dans la réponse.
+    Produit par le nœud generate. Vide si le LLM n'a placé aucun marqueur."""
+
     # ── Sortie ────────────────────────────────────────────────────────────────
     answer: str
     """Réponse finale en Markdown. Écrite par le nœud generate."""
@@ -249,6 +253,7 @@ def create_unified_state(
         previous_attempts=[],
         retrieved_docs=[],
         reranked_docs=[],
+        cited_docs=[],
         answer="",
         final_response=None,
         follow_up_suggestions=[],

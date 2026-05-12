@@ -273,6 +273,15 @@ async def query_stream(
                     )
                     evt.sources  = sources
 
+                # cited_docs (sous-ensemble cité par le LLM) remplace reranked_docs
+                # dès que disponible ; le fallback reste reranked_docs si vide.
+                if state_update.get("cited_docs"):
+                    sources     = _add_pdf_urls(
+                        [_chunk_to_model(d) for d in state_update["cited_docs"]],
+                        doc_store,
+                    )
+                    evt.sources = sources
+
                 if "follow_up_suggestions" in state_update:
                     follow_ups               = state_update["follow_up_suggestions"]
                     evt.follow_up_suggestions = follow_ups

@@ -31,10 +31,10 @@ def build_unified_graph(config, weaviate_store, cohere_client=None):
     from .state import UnifiedRAGState
     from .tools.query import QueryTool
     from .nodes.planning import analyze_and_plan
-    from .nodes.reasoning import agent_reason, agent_action, consolidate_chunks, route_agent, route_after_action
+    from .nodes.reasoning import agent_reason, agent_action, consolidate_chunks, seed_retrieval, route_agent, route_after_action
     from .nodes.compression import compress_context
     from .nodes.reranking import rerank
-    from .nodes.generation import generate, generate_follow_up, generate_title
+    from .nodes.generation import generate, generate_post
 
     client   = OpenAI(api_key=config.openai_key)
     llm_call = make_llm_caller(client, config.llm_model, config.llm_timeout)
@@ -53,36 +53,36 @@ def build_unified_graph(config, weaviate_store, cohere_client=None):
         return route_after_action(state, rag_config=config)
 
     # Nodes avec injection via partial
-    _analyze    = partial(analyze_and_plan,    llm_call=llm_call,    rag_config=config)
-    _reason     = partial(agent_reason,        llm_call=llm_call,    rag_config=config)
+    _analyze    = partial(analyze_and_plan,    llm_call=llm_call,     rag_config=config)
+    _seed       = partial(seed_retrieval,      query_tool=query_tool, rag_config=config)
+    _reason     = partial(agent_reason,        llm_call=llm_call,     rag_config=config)
     _action     = partial(agent_action,        query_tool=query_tool, rag_config=config, weaviate_store=weaviate_store)
     _compress   = partial(compress_context,    llm_call=llm_call,    rag_config=config)
     _consolidate= partial(consolidate_chunks,  query_tool=query_tool, rag_config=config)
     _rerank     = partial(rerank,              llm_call=llm_call,    cohere_client=cohere_client, rag_config=config)
-    _generate   = partial(generate,            llm_call=llm_call,    rag_config=config)
-    _follow_up  = partial(generate_follow_up,  llm_call=llm_call,    rag_config=config)
-    _title      = partial(generate_title,      llm_call=llm_call,    rag_config=config)
+    _generate   = partial(generate,      llm_call=llm_call, rag_config=config)
+    _post       = partial(generate_post, llm_call=llm_call, rag_config=config)
 
     builder = StateGraph(UnifiedRAGState)
     builder.add_node("analyze_and_plan",   _analyze)
+    builder.add_node("seed_retrieval",     _seed)
     builder.add_node("agent_reason",       _reason)
     builder.add_node("agent_action",       _action)
     builder.add_node("compress_context",   _compress)
     builder.add_node("consolidate",        _consolidate)
     builder.add_node("rerank",             _rerank)
-    builder.add_node("generate",           _generate)
-    builder.add_node("generate_follow_up", _follow_up)
-    builder.add_node("generate_title",     _title)
+    builder.add_node("generate",       _generate)
+    builder.add_node("generate_post",  _post)
 
     # Edges fixes
     builder.add_edge(START,                "analyze_and_plan")
-    builder.add_edge("analyze_and_plan",   "agent_reason")
+    builder.add_edge("analyze_and_plan",   "seed_retrieval")
+    builder.add_edge("seed_retrieval",     "agent_reason")
     builder.add_edge("compress_context",   "agent_reason")
     builder.add_edge("consolidate",        "rerank")
     builder.add_edge("rerank",             "generate")
-    builder.add_edge("generate",           "generate_follow_up")
-    builder.add_edge("generate_follow_up", "generate_title")
-    builder.add_edge("generate_title",     END)
+    builder.add_edge("generate",       "generate_post")
+    builder.add_edge("generate_post",  END)
 
     # Edges conditionnels
     builder.add_conditional_edges(
@@ -216,7 +216,7 @@ class RAGAgent:
 
         return {
             "answer":               final.get("answer",               ""),
-            "sources":              final.get("reranked_docs",        []),
+            "sources":              final.get("cited_docs") or final.get("reranked_docs", []),
             "question":             question,
             "question_id":          final.get("question_id",          ""),
             "n_retrieved":          len(final.get("retrieved_docs",   [])),
