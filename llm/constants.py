@@ -23,10 +23,9 @@ PROVIDER_MODELS: dict[str, list[str]] = {
         "gpt-4.1-nano",
         "gpt-4o",
         "gpt-4o-mini",
-        "o3-mini",
     ],
+    "claude":  ["claude-sonnet-4-6", "claude-haiku-4-5"],
     "mistral": ["mistral/mistral-large-latest", "mistral/mistral-small-latest", "mistral/open-mistral-7b"],
-    "claude":  ["claude-opus-4-5", "claude-sonnet-4-5", "claude-haiku-4-5"],
     "ollama":  ["ollama/gemma4", "ollama/llama3.2", "ollama/mistral", "ollama/phi4"],
 }
 
@@ -38,7 +37,7 @@ DEFAULT_EMBEDDING_MODELS: dict[str, str] = {
     "ollama": "ollama/nomic-embed-text",
 }
 
-# Max batch sizes for embeddings (inspired by Onyx)
+# Max batch sizes for embeddings
 PROVIDER_BATCH_SIZE: dict[EmbeddingProvider, int] = {
     EmbeddingProvider.OPENAI: 2048,
     EmbeddingProvider.COHERE: 96,

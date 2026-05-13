@@ -17,6 +17,7 @@ class RAGConfig:
 
     # ── LLM ───────────────────────────────────────────────────────────────────
     openai_key: str = ""
+    anthropic_key: Optional[str] = None
     llm_model: str = "gpt-4.1"
     embedding_model: str = "text-embedding-3-small"
     max_tokens: int = 4000
@@ -56,6 +57,7 @@ class RAGConfig:
         load_dotenv()
         return cls(
             openai_key=os.getenv("OPENAI_API_KEY", ""),
+            anthropic_key=os.getenv("ANTHROPIC_API_KEY") or None,
             llm_model=os.getenv("LLM_MODEL", "gpt-4.1"),
             embedding_model=os.getenv("EMBEDDING_MODEL", "text-embedding-3-small"),
             max_tokens=int(os.getenv("MAX_TOKENS", "4000")),
@@ -79,15 +81,61 @@ class RAGConfig:
 
     def validate(self) -> None:
         """Lève ValueError si la configuration est invalide."""
-        if not self.openai_key:
+        llm_provider = self._detect_llm_provider(self.llm_model)
+        embedding_provider = self._detect_embedding_provider(self.embedding_model)
+
+        if llm_provider == "openai" and not self.openai_key:
             raise ValueError(
-                "OPENAI_API_KEY est requis. "
+                "OPENAI_API_KEY est requis pour le modèle LLM configuré. "
                 "Définissez la variable d'environnement ou passez openai_key au constructeur."
+            )
+        if llm_provider == "anthropic" and not self.anthropic_key:
+            raise ValueError(
+                "ANTHROPIC_API_KEY est requis pour un modèle Claude/Anthropic. "
+                "Définissez la variable d'environnement ou passez anthropic_key au constructeur."
+            )
+        if embedding_provider == "openai" and not self.openai_key:
+            raise ValueError(
+                "OPENAI_API_KEY est requis pour le modèle d'embedding configuré."
             )
         if not 0.0 <= self.hybrid_alpha <= 1.0:
             raise ValueError(f"hybrid_alpha doit être entre 0 et 1, reçu : {self.hybrid_alpha}")
         if self.max_agent_iter < 1:
             raise ValueError(f"max_agent_iter doit être ≥ 1, reçu : {self.max_agent_iter}")
+
+    @staticmethod
+    def _detect_llm_provider(model: str) -> str:
+        m = (model or "").strip().lower()
+        if not m:
+            return "openai"
+        if m.startswith(("claude", "anthropic/")):
+            return "anthropic"
+        if m.startswith(("gpt-", "o1", "o3", "openai/")):
+            return "openai"
+        if m.startswith("mistral/"):
+            return "mistral"
+        if m.startswith(("gemini", "vertex/", "google/")):
+            return "google"
+        if m.startswith("ollama/"):
+            return "ollama"
+        return "unknown"
+
+    @staticmethod
+    def _detect_embedding_provider(model: str) -> str:
+        m = (model or "").strip().lower()
+        if not m:
+            return "openai"
+        if m.startswith("text-embedding") or m.startswith("openai/"):
+            return "openai"
+        if m.startswith("voyage/"):
+            return "voyage"
+        if m.startswith("cohere/"):
+            return "cohere"
+        if m.startswith("mistral/"):
+            return "mistral"
+        if m.startswith(("ollama/", "google/", "vertex/")):
+            return "other"
+        return "unknown"
 
     def to_dict(self) -> dict:
         """Exporte les paramètres publics (sans les clés API)."""

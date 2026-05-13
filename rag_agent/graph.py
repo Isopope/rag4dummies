@@ -1,7 +1,7 @@
 """Constructeur du graphe LangGraph unifié et classe RAGAgent.
 
 Interface publique compatible avec rag_pipeline.RAGAgent :
-  - RAGAgent(weaviate_store, openai_key, cohere_key, ...)
+  - RAGAgent(weaviate_store, openai_key, cohere_key, anthropic_key, ...)
   - agent.stream_query(question, source, conversation_summary) → generator
   - agent.query(question, source) → dict
 """
@@ -34,8 +34,16 @@ def build_unified_graph(config, weaviate_store):
     from .nodes.compression import compress_context
     from .nodes.generation import generate, generate_post
 
-    client   = OpenAI(api_key=config.openai_key)
-    llm_call = make_llm_caller(client, config.llm_model, config.llm_timeout)
+    client = OpenAI(api_key=config.openai_key) if config.openai_key else None
+    llm_call = make_llm_caller(
+        client,
+        config.llm_model,
+        config.llm_timeout,
+        provider_api_keys={
+            "openai": config.openai_key,
+            "anthropic": config.anthropic_key,
+        },
+    )
     embedder = make_embedder(client, config.embedding_model, config.llm_timeout)
     query_tool = QueryTool(weaviate_store, embedder)
 
@@ -100,7 +108,7 @@ class RAGAgent:
     """Agent RAG unifié — interface compatible avec rag_pipeline.RAGAgent.
 
     Usage :
-        agent = RAGAgent(weaviate_store, openai_key, cohere_key)
+        agent = RAGAgent(weaviate_store, openai_key, cohere_key, anthropic_key)
         for event in agent.stream_query(question):
             ...
         result = agent.query(question)
@@ -111,6 +119,7 @@ class RAGAgent:
         weaviate_store,
         openai_key: str,
         cohere_key: Optional[str] = None,
+        anthropic_key: Optional[str] = None,
         *,
         embedding_model: str = "text-embedding-3-small",
         llm_model: str = "gpt-4.1",
@@ -126,6 +135,7 @@ class RAGAgent:
 
         self._config = RAGConfig(
             openai_key      = openai_key,
+            anthropic_key   = anthropic_key,
             llm_model       = llm_model,
             embedding_model = embedding_model,
             cohere_key      = cohere_key,

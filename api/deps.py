@@ -70,6 +70,7 @@ def _build_agent(llm_model: str) -> "RAGAgent":
         weaviate_store     = store,
         openai_key         = cfg.openai_key,
         cohere_key         = cfg.cohere_key,
+        anthropic_key      = cfg.anthropic_key,
         embedding_model    = cfg.embedding_model,
         llm_model          = llm_model,
         top_k_retrieve     = cfg.top_k_retrieve,

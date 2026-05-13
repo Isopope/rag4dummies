@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import ast
 import json
+import os
 import re
 import threading
 from typing import Any, Callable, Optional
@@ -20,23 +21,44 @@ from pydantic import BaseModel, Field, field_validator
 
 # ── Helpers timeout ────────────────────────────────────────────────────────────
 
-def make_llm_caller(client, model: str, timeout: float) -> Callable:
+def _detect_llm_provider(model: str) -> str:
+    normalized = (model or "").strip().lower()
+    if normalized.startswith(("claude", "anthropic/")):
+        return "anthropic"
+    if normalized.startswith(("gpt-", "o1", "o3", "openai/")):
+        return "openai"
+    return "other"
+
+
+def make_llm_caller(
+    client,
+    model: str,
+    timeout: float,
+    provider_api_keys: Optional[dict[str, Optional[str]]] = None,
+) -> Callable:
     """Retourne une fonction d'appel LLM via LiteLLM avec timeout."""
+    key_map = provider_api_keys or {}
+    llm_provider = _detect_llm_provider(model)
+
     def _call(messages: list, **kwargs) -> Any:
         from llm.factory import get_llm_completion
 
-        # N'injecter api_key/api_base que pour les modèles OpenAI.
-        # Pour les autres providers (Anthropic, Mistral, Ollama…), LiteLLM
-        # doit lire la variable d'environnement correspondante et utiliser
-        # son propre endpoint. Passer la clé ou l'URL OpenAI à la place
-        # ferait échouer l'appel (NotFoundError / auth error).
-        _is_openai = not any(
-            model.startswith(prefix)
-            for prefix in ("claude", "anthropic/", "mistral/", "ollama/", "gemini/", "vertex/", "openrouter/", "z-ai/", "deepseek/", "qwen/", "moonshotai/")
-        )
-        api_key  = (getattr(client, "api_key",  None) if client else None) if _is_openai else None
+        # Résolution explicite des credentials provider.
+        # Si une clé dédiée est fournie (ex: ANTHROPIC_API_KEY), on la passe
+        # explicitement à LiteLLM pour éviter une dépendance implicite à l'env.
+        if llm_provider == "openai":
+            api_key = (getattr(client, "api_key", None) if client else None) or key_map.get("openai")
+        elif llm_provider == "anthropic":
+            api_key = key_map.get("anthropic")
+        else:
+            api_key = None
+
+        env_key_name = "OPENAI_API_KEY" if llm_provider == "openai" else "ANTHROPIC_API_KEY" if llm_provider == "anthropic" else None
+        if env_key_name and not api_key and not os.getenv(env_key_name):
+            raise ValueError(f"{env_key_name} est requis pour appeler le modèle '{model}'.")
+
         api_base = None
-        if _is_openai:
+        if llm_provider == "openai":
             _base = getattr(client, "base_url", None) if client else None
             api_base = str(_base) if _base is not None else None
         
