@@ -105,6 +105,10 @@ class DocumentRepository:
         )
         return result.scalar_one_or_none()
 
+    async def list_source_paths(self) -> list[str]:
+        result = await self._session.execute(select(Document.source_path))
+        return [source_path for source_path in result.scalars().all() if source_path]
+
     async def list_all(
         self,
         status: str | None = None,

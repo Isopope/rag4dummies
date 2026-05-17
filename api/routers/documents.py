@@ -17,7 +17,8 @@ from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..auth import current_admin_user
-from ..deps import get_document_store, get_db_session
+from ..deps import get_document_store, get_db_session, get_store
+from ..document_cleanup import TrackedDocumentNotFoundError, delete_tracked_document
 from db.models.user import User
 from storage import LocalDocumentStore
 
@@ -110,10 +111,11 @@ async def list_documents(
     "/{object_key:path}",
     status_code=status.HTTP_204_NO_CONTENT,
     summary="Supprimer un document",
-    description="Supprime le document de l'object store et de la base de données.",
+    description="Supprime de façon coordonnée les chunks Weaviate, le fichier dans l'object store et l'entrée suivie en base.",
 )
 async def delete_document(
     object_key: str,
+    store=Depends(get_store),
     doc_store=Depends(get_document_store),
     db: AsyncSession = Depends(get_db_session),
     _: User = Depends(current_admin_user),
@@ -123,17 +125,29 @@ async def delete_document(
 
     from db.repositories.document import DocumentRepository
     repo = DocumentRepository(db)
-    deleted_db = await repo.delete_by_source(object_key)
-    await db.commit()
-
-    # Suppression dans l'object store (silencieux si absent)
     try:
-        doc_store.delete(object_key)
-    except Exception as exc:
-        logger.warning("Suppression object store échouée pour '{}' : {}", object_key, exc)
-
-    if not deleted_db:
+        result = await delete_tracked_document(
+            object_key,
+            repo=repo,
+            db_session=db,
+            doc_store=doc_store,
+            weaviate_store=store,
+        )
+        logger.info(
+            "Document '{}' supprimé (chunks={}, fichier_supprime={}, db_supprime={}).",
+            object_key,
+            result.deleted_chunks,
+            result.deleted_file,
+            result.deleted_db,
+        )
+    except TrackedDocumentNotFoundError:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Document '{object_key}' introuvable.")
+    except Exception as exc:
+        logger.exception("Suppression cohérente échouée pour '{}' : {}", object_key, exc)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Impossible de supprimer le document '{object_key}'.",
+        )
 
 
 # ── GET /documents/{object_key} — téléchargement ──────────────────────────────
