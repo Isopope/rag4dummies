@@ -166,7 +166,7 @@ const FileUploadZone = ({
       >
         <Upload className="mx-auto mb-3 h-8 w-8 text-muted-foreground" />
         <p className="mb-1 text-sm font-medium text-foreground">Deposez vos fichiers ici</p>
-        <p className="text-xs text-muted-foreground">PDF - jusqu&apos;a 100 MB</p>
+        <p className="text-xs text-muted-foreground">PDF, DOCX, PPTX, TXT - jusqu&apos;a 100 MB</p>
         <button
           type="button"
           className="mt-4 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-opacity hover:opacity-90"
@@ -180,7 +180,7 @@ const FileUploadZone = ({
         <input
           ref={inputRef}
           type="file"
-          accept=".pdf"
+          accept=".pdf,.docx,.pptx,.txt"
           multiple
           className="hidden"
           onChange={(e) => handleFiles(e.target.files)}

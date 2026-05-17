@@ -36,8 +36,8 @@ from worker.queues import INGEST_QUEUE, LIGHT_QUEUE, RagCeleryPriority
 
 _logger = get_task_logger(__name__)
 
-# Extensions PDF/document acceptées par défaut pour le crawl local
-_DEFAULT_EXT = [".pdf"]
+# Extensions document acceptées par défaut pour le crawl local
+_DEFAULT_EXT = [".pdf", ".docx", ".pptx", ".txt"]
 
 
 # ── Helpers ────────────────────────────────────────────────────────────────────

@@ -62,16 +62,18 @@ class DocumentStore(ABC):
     @staticmethod
     def make_object_key(filename: str, file_bytes: bytes) -> str:
         """
-        Génère une clé MinIO/locale stable : ``{sha256_8chars}-{safe_name}.pdf``
+        Génère une clé MinIO/locale stable : ``{sha256_8chars}-{safe_name}{extension}``
         
         - Préfixe de 8 caractères du SHA-256 du contenu → évite les collisions
           entre fichiers différents ayant le même nom.
         - Nom nettoyé : espaces → tirets, caractères non-ASCII supprimés.
         """
         sha_prefix = hashlib.sha256(file_bytes).hexdigest()[:8]
-        safe = re.sub(r"[^\w.\-]", "-", Path(filename).stem, flags=re.ASCII)
+        path = Path(filename)
+        safe = re.sub(r"[^\w.\-]", "-", path.stem, flags=re.ASCII)
         safe = re.sub(r"-{2,}", "-", safe).strip("-").lower() or "document"
-        return f"{sha_prefix}-{safe}.pdf"
+        suffix = path.suffix.lower()
+        return f"{sha_prefix}-{safe}{suffix}"
 
 
 # ---------------------------------------------------------------------------

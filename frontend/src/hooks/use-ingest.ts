@@ -1,5 +1,5 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
-import { uploadPDF, getJobStatus } from '@/lib/api';
+import { uploadDocument, getJobStatus } from '@/lib/api';
 import type { JobStatusResponse } from '@/lib/api';
 import type { UploadedFile } from '@/types/chat';
 import { useAuth } from '@/context/AuthContext';
@@ -53,7 +53,7 @@ export function useIngest() {
   }, [updateFile]);
 
   const upload = useCallback(
-    async (file: File, parser = 'mineru', strategy = 'by_sentence', entity?: string, validityDate?: string) => {
+    async (file: File, parser = 'docling', strategy = 'by_sentence', entity?: string, validityDate?: string) => {
       if (!token) {
         toast.error('Connectez-vous pour uploader des fichiers.', {
           action: { label: 'Se connecter', onClick: () => (window.location.href = '/login') },
@@ -75,7 +75,7 @@ export function useIngest() {
       ]);
 
       try {
-        const resp = await uploadPDF(file, parser, strategy, token, entity, validityDate);
+        const resp = await uploadDocument(file, parser, strategy, token, entity, validityDate);
         updateFile(id, { status: 'processing', progress: 30 });
         pendingRef.current.push({ taskId: resp.task_id, fileId: id });
         toast.success(`"${file.name}" soumis à l'indexation.`);

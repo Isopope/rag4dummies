@@ -123,7 +123,7 @@ class IngestJobResponse(BaseModel):
     source: str  = Field(..., description="Clé de l'objet dans le DocumentStore")
     filename: str
     pdf_url: Optional[str] = Field(
-        None, description="URL présignée du PDF (valide ~1h) — disponible immédiatement"
+        None, description="URL présignée du document (valide ~1h) — disponible immédiatement"
     )
     chunk_count: int = 0
     error: Optional[str] = None
@@ -155,7 +155,7 @@ class IngestResponse(BaseModel):
 
 class CrawlLocalRequest(BaseModel):
     directory: str  = Field(..., description="Chemin absolu du répertoire à scanner")
-    ext: list[str]  = Field([".pdf"], description="Extensions acceptées")
+    ext: list[str]  = Field([".pdf", ".docx", ".pptx", ".txt"], description="Extensions acceptées")
     recursive: bool = Field(True, description="Descendre dans les sous-répertoires")
     parser: str     = Field("docling", description="docling | mineru | simple")
     strategy: str   = Field("by_token", description="by_token | by_sentence | by_block")

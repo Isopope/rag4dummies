@@ -274,7 +274,7 @@ export async function* streamQueryRAG(
 
 // ── Ingest ────────────────────────────────────────────────────────────────────
 
-export async function uploadPDF(
+export async function uploadDocument(
   file: File,
   parser: string,
   strategy: string,
@@ -288,13 +288,24 @@ export async function uploadPDF(
   fd.append('strategy', strategy);
   if (entity) fd.append('entity', entity);
   if (validityDate) fd.append('validity_date', validityDate);
-  const res = await fetch(`${BASE}/ingest/pdf`, {
+  const res = await fetch(`${BASE}/ingest/file`, {
     method: 'POST',
     headers: { Authorization: `Bearer ${token}` },
     body: fd,
   });
   await assertOk(res);
   return res.json();
+}
+
+export async function uploadPDF(
+  file: File,
+  parser: string,
+  strategy: string,
+  token: string,
+  entity?: string,
+  validityDate?: string,
+): Promise<IngestJobResponse> {
+  return uploadDocument(file, parser, strategy, token, entity, validityDate);
 }
 
 // ── Jobs ──────────────────────────────────────────────────────────────────────

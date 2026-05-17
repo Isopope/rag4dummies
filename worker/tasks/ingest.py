@@ -1,10 +1,10 @@
 """
 Tâches Celery d'ingestion — cœur du pipeline industriel.
 
-Flux PDF :
+Flux documents :
     API  →  upload MinIO/local  →  DB upsert (PENDING, task_id=X)
          →  ingest_pdf_task.delay(object_key, parser, strategy)
-         →  Worker : download tmpfile → ingest_pdf() → Weaviate
+         →  Worker : download tmpfile → ingest_document() → Weaviate
          →  DB mark_indexed / mark_error
          →  tmpfile supprimé
 
@@ -107,6 +107,13 @@ def _download_to_tmp(object_key: str, suffix: str) -> Path:
     return Path(tmp.name)
 
 
+def _document_suffix(object_key: str, filename: str = "") -> str:
+    suffix = Path(filename).suffix.lower() if filename else ""
+    if not suffix:
+        suffix = Path(object_key).suffix.lower()
+    return suffix or ".pdf"
+
+
 def _build_weaviate_store():
     """Crée et connecte un WeaviateStore depuis les variables d'environnement."""
     from rag_agent.config import RAGConfig
@@ -117,7 +124,7 @@ def _build_weaviate_store():
     return store, cfg
 
 
-# ── Tâche : ingestion PDF ──────────────────────────────────────────────────────
+# ── Tâche : ingestion document ─────────────────────────────────────────────────
 
 @celery_app.task(
     name        = "rag.tasks.ingest_pdf",
@@ -137,7 +144,7 @@ def ingest_pdf_task(
     validity_date: str | None = None,
 ) -> dict:
     """
-    Télécharge le PDF depuis le DocumentStore, l'ingère dans Weaviate et met
+    Télécharge le document depuis le DocumentStore, l'ingère dans Weaviate et met
     à jour le statut DB.
 
     Paramètres
@@ -153,24 +160,28 @@ def ingest_pdf_task(
     --------
     dict avec {object_key, chunk_count, status}
     """
-    _task_logger.info("Début ingestion PDF | task=%s object_key=%s", self.request.id, object_key)
+    _task_logger.info("Début ingestion document | task=%s object_key=%s", self.request.id, object_key)
 
     tmp_path: Path | None = None
     store = None
     try:
+        suffix = _document_suffix(object_key, filename)
+        if parser == "simple" and suffix != ".pdf":
+            raise ValueError("Le parser simple n'est supporté que pour les fichiers PDF.")
+
         # 1. Marquer PROCESSING en DB
         _db_mark_processing(object_key)
 
         # 2. Télécharger vers un tmpfile
-        tmp_path = _download_to_tmp(object_key, suffix=".pdf")
+        tmp_path = _download_to_tmp(object_key, suffix=suffix)
 
         # 3. Connexion Weaviate
         store, cfg = _build_weaviate_store()
 
         # 4. Ingestion
-        from ingestor import ingest_pdf as _ingest_pdf
-        n = _ingest_pdf(
-            pdf_path          = tmp_path,
+        from ingestor import ingest_document as _ingest_document
+        n = _ingest_document(
+            file_path         = tmp_path,
             weaviate_store    = store,
             api_key           = cfg.openai_key,
             embedding_model   = cfg.embedding_model,
@@ -184,7 +195,7 @@ def ingest_pdf_task(
 
         # 5. Marquer INDEXED en DB
         _db_mark_indexed(object_key, n)
-        _task_logger.info("Ingestion OK | task=%s object_key=%s chunks=%d", self.request.id, object_key, n)
+    _task_logger.info("Ingestion OK | task=%s object_key=%s chunks=%d", self.request.id, object_key, n)
 
         return {"object_key": object_key, "chunk_count": n, "status": "indexed"}
 
@@ -197,7 +208,7 @@ def ingest_pdf_task(
     except Exception as exc:
         retry_in = RETRY_BACKOFF_BASE * (2 ** self.request.retries)
         _task_logger.warning(
-            "Erreur ingestion PDF | task=%s attempt=%d/%d : %s — retry dans %ds",
+            "Erreur ingestion document | task=%s attempt=%d/%d : %s — retry dans %ds",
             self.request.id, self.request.retries + 1, MAX_RETRIES, exc, retry_in,
         )
         if self.request.retries >= MAX_RETRIES:

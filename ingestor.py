@@ -1,4 +1,4 @@
-"""Ingesteur PDF → chunks → embeddings OpenAI → Weaviate.
+"""Ingesteur documents → chunks → embeddings OpenAI → Weaviate.
 
 Deux modes selon ce qui est installé :
   • openingestion  (défaut) — pipeline complet DoclingChef / MinerUChef + chunker
@@ -191,7 +191,7 @@ def _embed_content_and_titles(
 # ── mode openingestion ────────────────────────────────────────────────────────
 
 def _ingest_with_openingestion(
-    pdf_path: Path,
+    document_path: Path,
     source: str,
     parser: str,
     strategy: str,
@@ -203,12 +203,12 @@ def _ingest_with_openingestion(
 ) -> tuple[list[dict], list[list[float]], list[list[float]]]:
     from openingestion import ingest
 
-    progress_cb(f"Parsing '{pdf_path.name}' avec {parser} / {strategy}…")
+    progress_cb(f"Parsing '{document_path.name}' avec {parser} / {strategy}…")
 
     mineru_tmp = Path(tempfile.mkdtemp(prefix="mineru_out_"))
     try:
         chunks = ingest(
-            pdf_path,
+            document_path,
             parser=parser,
             strategy=strategy,
             image_mode="path",
@@ -265,7 +265,7 @@ def _ingest_with_openingestion(
 # ── mode fallback (PyMuPDF) ───────────────────────────────────────────────────
 
 def _ingest_simple(
-    pdf_path: Path,
+    document_path: Path,
     source: str,
     api_key: str,
     embedding_model: str,
@@ -280,9 +280,9 @@ def _ingest_simple(
         raise ImportError("pymupdf est requis en mode fallback : pip install pymupdf")
 
     _cb = progress_cb or (lambda m: None)
-    _cb(f"Extraction texte de '{pdf_path.name}' (mode simple)…")
+    _cb(f"Extraction texte de '{document_path.name}' (mode simple)…")
 
-    doc = fitz.open(str(pdf_path))
+    doc = fitz.open(str(document_path))
     raw_pages: list[tuple[int, str]] = []
     for page in doc:
         text = page.get_text("text").strip()
@@ -336,8 +336,12 @@ def _ingest_simple(
 
 # ── point d'entrée public ─────────────────────────────────────────────────────
 
-def ingest_pdf(
-    pdf_path: Path,
+def _supports_simple_fallback(file_path: Path) -> bool:
+    return file_path.suffix.lower() == ".pdf"
+
+
+def ingest_document(
+    file_path: Path,
     weaviate_store,
     api_key: str,
     embedding_model: str = "text-embedding-3-small",
@@ -349,12 +353,12 @@ def ingest_pdf(
     entity: str | None = None,
     validity_date: str | None = None,
 ) -> int:
-    """Parse un PDF, embed ses chunks via OpenAI Embeddings et les stocke dans Weaviate.
+    """Parse un document, embed ses chunks via OpenAI Embeddings et les stocke dans Weaviate.
 
     Parameters
     ----------
-    pdf_path:
-        Chemin vers le fichier PDF.
+    file_path:
+        Chemin vers le fichier à ingérer.
     weaviate_store:
         Instance connectée de ``WeaviateStore``.
     api_key:
@@ -369,10 +373,11 @@ def ingest_pdf(
         Callback appelé avec des messages de progression (pour l'UI).
     force_simple:
         Si True, utilise le mode PyMuPDF même si openingestion est dispo.
+        Ce mode n'est supporté que pour les PDFs.
     source_override:
-        Si renseigné, remplace la valeur par défaut (chemin absolu du PDF)
+        Si renseigné, remplace la valeur par défaut (chemin absolu du document)
         pour le champ ``source`` stocké dans Weaviate.  Utilisé par l'API
-        pour stocker la clé MinIO (ex. ``abc12345-mon-doc.pdf``) plutôt que
+        pour stocker la clé MinIO (ex. ``abc12345-mon-doc.docx``) plutôt que
         le chemin local éphémère.
 
     Returns
@@ -381,7 +386,10 @@ def ingest_pdf(
         Nombre de chunks stockés.
     """
     _cb = progress_cb or (lambda msg: logger.info(msg))
-    source = source_override or str(pdf_path.resolve())
+    if force_simple and not _supports_simple_fallback(file_path):
+        raise ValueError("Le parser simple n'est supporté que pour les fichiers PDF.")
+
+    source = source_override or str(file_path.resolve())
     rfc3339_date: str | None = f"{validity_date}T00:00:00Z" if validity_date else None
 
     # Supprimer les éventuels chunks existants pour ce fichier
@@ -389,7 +397,7 @@ def ingest_pdf(
 
     if force_simple:
         chunk_dicts, content_vectors, title_vectors = _ingest_simple(
-            pdf_path,
+            file_path,
             source,
             api_key,
             embedding_model,
@@ -400,18 +408,22 @@ def ingest_pdf(
     else:
         try:
             chunk_dicts, content_vectors, title_vectors = _ingest_with_openingestion(
-                pdf_path, source, parser, chunking_strategy,
+                file_path, source, parser, chunking_strategy,
                 api_key, embedding_model, _cb,
                 entity=entity,
                 validity_date=rfc3339_date,
             )
         except ImportError:
+            if not _supports_simple_fallback(file_path):
+                raise RuntimeError(
+                    f"openingestion est requis pour ingérer les fichiers '{file_path.suffix.lower() or 'sans extension'}'."
+                )
             logger.warning(
                 "openingestion introuvable — passage en mode simple (PyMuPDF)."
             )
             _cb(" openingestion non installé, mode simple activé.")
             chunk_dicts, content_vectors, title_vectors = _ingest_simple(
-                pdf_path,
+                file_path,
                 source,
                 api_key,
                 embedding_model,
@@ -433,8 +445,37 @@ def ingest_pdf(
         )
 
     n = weaviate_store.insert_chunks(chunk_dicts, content_vectors, title_vectors)
-    _cb(f" {n} chunks indexés pour '{pdf_path.name}'.")
+    _cb(f" {n} chunks indexés pour '{file_path.name}'.")
     return n
+
+
+def ingest_pdf(
+    pdf_path: Path,
+    weaviate_store,
+    api_key: str,
+    embedding_model: str = "text-embedding-3-small",
+    chunking_strategy: str = "by_token",
+    parser: str = "docling",
+    progress_cb: Callable[[str], None] | None = None,
+    force_simple: bool = False,
+    source_override: str | None = None,
+    entity: str | None = None,
+    validity_date: str | None = None,
+) -> int:
+    """Alias rétrocompatible vers ingest_document pour les chemins historiques."""
+    return ingest_document(
+        file_path=pdf_path,
+        weaviate_store=weaviate_store,
+        api_key=api_key,
+        embedding_model=embedding_model,
+        chunking_strategy=chunking_strategy,
+        parser=parser,
+        progress_cb=progress_cb,
+        force_simple=force_simple,
+        source_override=source_override,
+        entity=entity,
+        validity_date=validity_date,
+    )
 
 
 # ── ingestion depuis un fichier JSONL pré-découpé ────────────────────────────

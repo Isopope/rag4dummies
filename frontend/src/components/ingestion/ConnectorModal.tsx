@@ -147,7 +147,7 @@ function EntityFields({
 
 function LocalForm({ onSubmit, isLoading }: { onSubmit: (b: CrawlBody) => void; isLoading: boolean }) {
   const [directory, setDirectory] = useState('');
-  const [ext, setExt] = useState('.pdf, .docx, .txt');
+  const [ext, setExt] = useState('.pdf, .docx, .pptx, .txt');
   const [recursive, setRecursive] = useState(true);
   const [parser, setParser] = useState<string>('docling');
   const [strategy, setStrategy] = useState<string>('by_token');
@@ -163,7 +163,7 @@ function LocalForm({ onSubmit, isLoading }: { onSubmit: (b: CrawlBody) => void; 
       .map((s) => (s.startsWith('.') ? s : `.${s}`));
     const body: CrawlLocalRequest = {
       directory,
-      ext: extList.length ? extList : ['.pdf'],
+      ext: extList.length ? extList : ['.pdf', '.docx', '.pptx', '.txt'],
       recursive,
       parser,
       strategy,
@@ -185,7 +185,7 @@ function LocalForm({ onSubmit, isLoading }: { onSubmit: (b: CrawlBody) => void; 
       />
       <TextInput
         label="Extensions (séparées par des virgules)"
-        placeholder=".pdf, .docx, .txt"
+        placeholder=".pdf, .docx, .pptx, .txt"
         value={ext}
         onChange={setExt}
         hint="Seuls les fichiers avec ces extensions seront indexés."

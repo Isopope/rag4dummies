@@ -1,6 +1,7 @@
 """Router /ingest — ingestion de PDF et JSONL dans Weaviate via Celery."""
 from __future__ import annotations
 
+import mimetypes
 import os
 import uuid
 from pathlib import Path
@@ -18,6 +19,7 @@ from storage import DocumentStore
 router = APIRouter()
 
 _MAX_FILE_SIZE = 100 * 1024 * 1024  # 100 MB
+_SUPPORTED_DOCUMENT_EXTENSIONS = {".pdf", ".docx", ".pptx", ".txt"}
 
 
 def _check_file_size(content: bytes, filename: str) -> None:
@@ -37,29 +39,29 @@ def _check_extension(filename: str, allowed: set[str]) -> None:
         )
 
 
-# ── POST /ingest/pdf ───────────────────────────────────────────────────────────
+def _guess_content_type(filename: str) -> str:
+    return mimetypes.guess_type(filename)[0] or "application/octet-stream"
 
-@router.post(
-    "/pdf",
-    response_model=IngestJobResponse,
-    status_code=status.HTTP_202_ACCEPTED,
-    summary="Ingérer un PDF (asynchrone)",
-    description=(
-        "Upload un fichier PDF, le conserve dans l'object store (MinIO ou local) "
-        "et dispatche l'ingestion vers un worker Celery. "
-        "La réponse (202 Accepted) contient le ``task_id`` permettant de suivre "
-        "la progression via ``GET /jobs/{task_id}``."
-    ),
-)
-async def ingest_pdf(
-    file:     UploadFile = File(..., description="Fichier PDF à indexer"),
-    parser:   str        = Form("mineru",      description="Parser : docling | mineru | simple"),
-    strategy: str        = Form("by_sentence", description="Stratégie de découpage : by_token | by_sentence | by_block"),
-    entity:   str | None = Form(None,          description="Entité propriétaire (ex. 'dassault', 'thales')"),
-    validity_date: str | None = Form(None,     description="Date de validité ISO YYYY-MM-DD"),
-    doc_store: DocumentStore = Depends(get_document_store),
-    db=Depends(get_db_session),
-    _: User = Depends(current_admin_user),  # admin uniquement
+
+def _check_parser_support_for_file(parser: str, filename: str) -> None:
+    if parser == "simple" and Path(filename).suffix.lower() != ".pdf":
+        raise HTTPException(
+            status_code=400,
+            detail="Le parser simple n'est supporté que pour les fichiers PDF.",
+        )
+
+
+async def _submit_document_ingest(
+    *,
+    file: UploadFile,
+    parser: str,
+    strategy: str,
+    entity: str | None,
+    validity_date: str | None,
+    doc_store: DocumentStore,
+    db,
+    allowed_extensions: set[str],
+    default_filename: str,
 ) -> IngestJobResponse:
     if parser not in ("docling", "mineru", "simple"):
         raise HTTPException(status_code=400, detail="parser doit être : docling | mineru | simple")
@@ -70,15 +72,16 @@ async def ingest_pdf(
         if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", validity_date):
             raise HTTPException(status_code=400, detail="validity_date doit être au format YYYY-MM-DD")
 
-    filename = file.filename or "upload.pdf"
-    _check_extension(filename, {".pdf"})
+    filename = file.filename or default_filename
+    _check_extension(filename, allowed_extensions)
+    _check_parser_support_for_file(parser, filename)
     content = await file.read()
     _check_file_size(content, filename)
 
     object_key = DocumentStore.make_object_key(filename, content)
 
     # 1. Upload dans l'object store
-    doc_store.upload(content, object_key, content_type="application/pdf")
+    doc_store.upload(content, object_key, content_type=_guess_content_type(filename))
 
     task_id = str(uuid.uuid4())
 
@@ -101,11 +104,11 @@ async def ingest_pdf(
     try:
         celery.send_task(
             "rag.tasks.ingest_pdf",
-            args     = [object_key, parser, strategy, filename],
-            kwargs   = {"entity": entity, "validity_date": validity_date},
-            task_id  = task_id,
-            queue    = INGEST_QUEUE,
-            priority = int(RagCeleryPriority.HIGH),
+            args=[object_key, parser, strategy, filename],
+            kwargs={"entity": entity, "validity_date": validity_date},
+            task_id=task_id,
+            queue=INGEST_QUEUE,
+            priority=int(RagCeleryPriority.HIGH),
         )
     except Exception as exc:
         await repo.mark_error(object_key, f"Dispatch Celery échoué : {exc}")
@@ -116,17 +119,86 @@ async def ingest_pdf(
             detail="Impossible de planifier l'ingestion.",
         )
 
-    # 4. URL présignée immédiate (disponible dès l'upload)
-    expires  = int(os.getenv("MINIO_PRESIGN_EXPIRES", "3600"))
-    pdf_url  = doc_store.presigned_url(object_key, expires_seconds=expires)
+    expires = int(os.getenv("MINIO_PRESIGN_EXPIRES", "3600"))
+    file_url = doc_store.presigned_url(object_key, expires_seconds=expires)
 
-    logger.info("PDF '{}' dispatché — task_id={}", filename, task_id)
+    logger.info("Document '{}' dispatché — task_id={}", filename, task_id)
     return IngestJobResponse(
-        task_id  = task_id,
-        status   = "pending",
-        source   = object_key,
-        filename = filename,
-        pdf_url  = pdf_url,
+        task_id=task_id,
+        status="pending",
+        source=object_key,
+        filename=filename,
+        pdf_url=file_url,
+    )
+
+
+@router.post(
+    "/file",
+    response_model=IngestJobResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+    summary="Ingérer un document (asynchrone)",
+    description=(
+        "Upload un document (PDF, DOCX, PPTX, TXT), le conserve dans l'object store "
+        "et dispatche l'ingestion vers un worker Celery. "
+        "La réponse (202 Accepted) contient le ``task_id`` permettant de suivre "
+        "la progression via ``GET /jobs/{task_id}``."
+    ),
+)
+async def ingest_file(
+    file: UploadFile = File(..., description="Fichier à indexer (.pdf, .docx, .pptx, .txt)"),
+    parser: str = Form("docling", description="Parser : docling | mineru | simple"),
+    strategy: str = Form("by_sentence", description="Stratégie de découpage : by_token | by_sentence | by_block"),
+    entity: str | None = Form(None, description="Entité propriétaire (ex. 'dassault', 'thales')"),
+    validity_date: str | None = Form(None, description="Date de validité ISO YYYY-MM-DD"),
+    doc_store: DocumentStore = Depends(get_document_store),
+    db=Depends(get_db_session),
+    _: User = Depends(current_admin_user),
+) -> IngestJobResponse:
+    return await _submit_document_ingest(
+        file=file,
+        parser=parser,
+        strategy=strategy,
+        entity=entity,
+        validity_date=validity_date,
+        doc_store=doc_store,
+        db=db,
+        allowed_extensions=_SUPPORTED_DOCUMENT_EXTENSIONS,
+        default_filename="upload.pdf",
+    )
+
+
+# ── POST /ingest/pdf ───────────────────────────────────────────────────────────
+
+@router.post(
+    "/pdf",
+    response_model=IngestJobResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+    summary="Ingérer un PDF (asynchrone)",
+    description=(
+        "Alias rétrocompatible pour l'ingestion de PDFs. "
+        "Pour les autres formats, utiliser ``POST /ingest/file``."
+    ),
+)
+async def ingest_pdf(
+    file:     UploadFile = File(..., description="Fichier PDF à indexer"),
+    parser:   str        = Form("mineru",      description="Parser : docling | mineru | simple"),
+    strategy: str        = Form("by_sentence", description="Stratégie de découpage : by_token | by_sentence | by_block"),
+    entity:   str | None = Form(None,          description="Entité propriétaire (ex. 'dassault', 'thales')"),
+    validity_date: str | None = Form(None,     description="Date de validité ISO YYYY-MM-DD"),
+    doc_store: DocumentStore = Depends(get_document_store),
+    db=Depends(get_db_session),
+    _: User = Depends(current_admin_user),  # admin uniquement
+) -> IngestJobResponse:
+    return await _submit_document_ingest(
+        file=file,
+        parser=parser,
+        strategy=strategy,
+        entity=entity,
+        validity_date=validity_date,
+        doc_store=doc_store,
+        db=db,
+        allowed_extensions={".pdf"},
+        default_filename="upload.pdf",
     )
 
 

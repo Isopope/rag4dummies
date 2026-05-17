@@ -19,7 +19,7 @@ router = APIRouter()
     summary="État d'une tâche d'ingestion",
     description=(
         "Retourne l'état courant d'une tâche d'ingestion identifiée par son ``task_id`` "
-        "(retourné par ``POST /ingest/pdf`` ou ``POST /ingest/jsonl``). "
+        "(retourné par ``POST /ingest/file``, ``POST /ingest/pdf`` ou ``POST /ingest/jsonl``). "
         "Consulte à la fois Celery (état temps-réel) et la base de données (statut persistant)."
     ),
 )

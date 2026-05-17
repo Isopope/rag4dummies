@@ -6,6 +6,7 @@ En mode MinioDocumentStore, ce router génère une presigned URL et redirige ver
 """
 from __future__ import annotations
 
+import mimetypes
 import os
 from pathlib import Path
 from typing import Optional
@@ -156,7 +157,7 @@ async def delete_document(
     "/{object_key:path}",
     summary="Télécharger un document",
     description=(
-        "Retourne le fichier PDF identifié par sa clé.\n\n"
+        "Retourne le fichier identifié par sa clé.\n\n"
         "- **Mode local** : réponse directe (FileResponse).\n"
         "- **Mode MinIO** : redirection HTTP 302 vers la presigned URL MinIO."
     ),
@@ -179,7 +180,7 @@ async def get_document(
             )
         return FileResponse(
             path        = str(file_path),
-            media_type  = "application/pdf",
+            media_type  = mimetypes.guess_type(file_path.name)[0] or "application/octet-stream",
             filename    = Path(object_key).name,
         )
 
