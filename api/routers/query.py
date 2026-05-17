@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-from concurrent.futures import ThreadPoolExecutor
 from typing import AsyncGenerator
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -11,9 +10,10 @@ from fastapi.responses import StreamingResponse
 from loguru import logger
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ..auth import current_active_user, current_optional_user
+from ..auth import current_optional_user
 from ..deps import get_agent_for_model, get_document_store
 from ..models import BboxModel, ChunkModel, CitationInfoModel, QueryRequest, QueryResponse, StreamEvent
+from ..query_runtime import ExecutorCapacityGate, build_query_executor_gates
 from db import get_db_session
 from db.models.user import User
 from db.repositories import ConversationRepository
@@ -22,7 +22,27 @@ from rag_agent.utils.citations import hyperlink_citations, CitationInfo
 
 router = APIRouter()
 
-_THREAD_POOL = ThreadPoolExecutor(max_workers=4, thread_name_prefix="rag-query")
+_QUERY_EXECUTOR, _STREAM_EXECUTOR = build_query_executor_gates()
+
+
+def _raise_if_executor_saturated(gate: ExecutorCapacityGate, route_label: str) -> None:
+    if gate.try_acquire():
+        return
+
+    logger.warning(
+        "Capacité {} saturée : max_inflight={} max_workers={}",
+        gate.name,
+        gate.max_inflight,
+        gate.max_workers,
+    )
+    raise HTTPException(
+        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+        detail=(
+            f"Capacité RAG saturée pour {route_label} "
+            f"({gate.max_inflight} requêtes simultanées max). Réessayez."
+        ),
+        headers={"Retry-After": "1"},
+    )
 
 
 def _parse_bboxes(raw: str | None) -> list[BboxModel]:
@@ -94,16 +114,18 @@ async def query(
     doc_store=Depends(get_document_store),
 ) -> QueryResponse:
     agent = get_agent_for_model(body.model)
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
 
     def _run_query():
         with track_usage() as tracker:
             result = agent.query(question=body.question, source=body.source_filter)
         return result, tracker.snapshot()
 
+    _raise_if_executor_saturated(_QUERY_EXECUTOR, "/query")
+
     try:
         result, usage = await loop.run_in_executor(
-            _THREAD_POOL,
+            _QUERY_EXECUTOR.executor,
             _run_query,
         )
     except Exception as exc:
@@ -112,6 +134,8 @@ async def query(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=str(exc),
         )
+    finally:
+        _QUERY_EXECUTOR.release()
 
     sources = _add_pdf_urls(
         [_chunk_to_model(d) for d in result.get("sources", [])],
@@ -151,8 +175,10 @@ async def query_stream(
     user: User | None = Depends(current_optional_user),
 ):
     agent = get_agent_for_model(body.model)
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
     queue: asyncio.Queue = asyncio.Queue()
+
+    _raise_if_executor_saturated(_STREAM_EXECUTOR, "/query/stream")
 
     def _producer():
         """Exécute stream_query dans un thread et empile les événements dans la queue."""
@@ -169,11 +195,22 @@ async def query_stream(
         except Exception as exc:
             loop.call_soon_threadsafe(queue.put_nowait, {"__error__": str(exc)})
         finally:
-            if tracker is not None:
-                loop.call_soon_threadsafe(queue.put_nowait, {"__usage__": tracker.snapshot()})
-            loop.call_soon_threadsafe(queue.put_nowait, None)  # sentinelle
+            try:
+                if tracker is not None:
+                    loop.call_soon_threadsafe(queue.put_nowait, {"__usage__": tracker.snapshot()})
+                loop.call_soon_threadsafe(queue.put_nowait, None)  # sentinelle
+            finally:
+                _STREAM_EXECUTOR.release()
 
-    loop.run_in_executor(_THREAD_POOL, _producer)
+    try:
+        loop.run_in_executor(_STREAM_EXECUTOR.executor, _producer)
+    except Exception as exc:
+        _STREAM_EXECUTOR.release()
+        logger.exception("Impossible de lancer le streaming RAG : {}", exc)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(exc),
+        )
 
     async def _event_generator() -> AsyncGenerator[str, None]:
         answer      = ""
