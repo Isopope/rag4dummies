@@ -137,8 +137,8 @@ def _build_weaviate_store():
 def ingest_pdf_task(
     self: Task,
     object_key: str,
-    parser: str    = "docling",
-    strategy: str  = "by_token",
+    parser: str    = "mineru",
+    strategy: str  = "by_sentence",
     filename: str  = "",
     entity: str | None = None,
     validity_date: str | None = None,

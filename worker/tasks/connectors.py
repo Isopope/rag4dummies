@@ -143,8 +143,8 @@ def crawl_local_task(
     directory: str,
     ext: list[str]   = _DEFAULT_EXT,
     recursive: bool  = True,
-    parser: str      = "docling",
-    strategy: str    = "by_token",
+    parser: str      = "mineru",
+    strategy: str    = "by_sentence",
     entity: str | None   = None,
     validity_date: str | None = None,
 ) -> dict[str, Any]:
@@ -201,8 +201,8 @@ def crawl_web_task(
     urls: list[str],
     output_dir: str  = "./tmp/web_fetch",
     mode: str        = "pdf",
-    parser: str      = "docling",
-    strategy: str    = "by_token",
+    parser: str      = "mineru",
+    strategy: str    = "by_sentence",
     entity: str | None    = None,
     validity_date: str | None = None,
 ) -> dict[str, Any]:
@@ -261,8 +261,8 @@ def crawl_sharepoint_task(
     site_name: str   | None = None,
     folder_path: str | None = None,
     output_dir: str         = "./tmp/sharepoint_fetch",
-    parser: str             = "docling",
-    strategy: str           = "by_token",
+    parser: str             = "mineru",
+    strategy: str           = "by_sentence",
     entity: str | None      = None,
     validity_date: str | None = None,
     # Credentials — priorité : paramètre > variable d'environnement

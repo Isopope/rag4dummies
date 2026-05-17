@@ -117,7 +117,7 @@ def retry_stale_pending() -> dict:
     _logger.info("retry_stale_pending : %d document(s) relancé(s)", len(docs))
     for doc in docs:
         ingest_pdf_task.apply_async(
-            args     = [doc.source_path, doc.parser or "docling", doc.strategy or "by_token", doc.filename or ""],
+            args     = [doc.source_path, doc.parser or "mineru", doc.strategy or "by_sentence", doc.filename or ""],
             queue    = INGEST_QUEUE,
             priority = int(RagCeleryPriority.LOW),
         )
@@ -140,7 +140,7 @@ def retry_error_documents() -> dict:
     dispatched_paths = []
     for doc in docs:
         ingest_pdf_task.apply_async(
-            args     = [doc.source_path, doc.parser or "docling", doc.strategy or "by_token", doc.filename or ""],
+            args     = [doc.source_path, doc.parser or "mineru", doc.strategy or "by_sentence", doc.filename or ""],
             queue    = INGEST_QUEUE,
             priority = int(RagCeleryPriority.LOW),
         )

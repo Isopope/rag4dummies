@@ -11,8 +11,8 @@ import { useEntities } from '@/hooks/use-entities';
 
 // ── Helpers UI ────────────────────────────────────────────────────────────────
 
-const PARSERS = ['docling', 'mineru', 'simple'] as const;
-const STRATEGIES = ['by_token', 'by_sentence', 'by_block'] as const;
+const DEFAULT_PARSER = 'mineru';
+const DEFAULT_STRATEGY = 'by_sentence';
 
 function Select({
   label,
@@ -149,8 +149,6 @@ function LocalForm({ onSubmit, isLoading }: { onSubmit: (b: CrawlBody) => void; 
   const [directory, setDirectory] = useState('');
   const [ext, setExt] = useState('.pdf, .docx, .pptx, .txt');
   const [recursive, setRecursive] = useState(true);
-  const [parser, setParser] = useState<string>('docling');
-  const [strategy, setStrategy] = useState<string>('by_token');
   const [entity, setEntity] = useState('');
   const [validityDate, setValidityDate] = useState('');
 
@@ -165,8 +163,8 @@ function LocalForm({ onSubmit, isLoading }: { onSubmit: (b: CrawlBody) => void; 
       directory,
       ext: extList.length ? extList : ['.pdf', '.docx', '.pptx', '.txt'],
       recursive,
-      parser,
-      strategy,
+      parser: DEFAULT_PARSER,
+      strategy: DEFAULT_STRATEGY,
       entity: entity || undefined,
       validity_date: validityDate || undefined,
     };
@@ -191,10 +189,6 @@ function LocalForm({ onSubmit, isLoading }: { onSubmit: (b: CrawlBody) => void; 
         hint="Seuls les fichiers avec ces extensions seront indexés."
       />
       <Checkbox label="Descendre dans les sous-répertoires" checked={recursive} onChange={setRecursive} />
-      <div className="grid grid-cols-2 gap-3">
-        <Select label="Parser" value={parser} onChange={setParser} options={PARSERS} />
-        <Select label="Stratégie" value={strategy} onChange={setStrategy} options={STRATEGIES} />
-      </div>
       <EntityFields
         entity={entity}
         onEntityChange={setEntity}
@@ -211,8 +205,6 @@ function LocalForm({ onSubmit, isLoading }: { onSubmit: (b: CrawlBody) => void; 
 function WebForm({ onSubmit, isLoading }: { onSubmit: (b: CrawlBody) => void; isLoading: boolean }) {
   const [urlsText, setUrlsText] = useState('');
   const [mode, setMode] = useState<'pdf' | 'html'>('pdf');
-  const [parser, setParser] = useState<string>('docling');
-  const [strategy, setStrategy] = useState<string>('by_token');
   const [entity, setEntity] = useState('');
   const [validityDate, setValidityDate] = useState('');
 
@@ -226,8 +218,8 @@ function WebForm({ onSubmit, isLoading }: { onSubmit: (b: CrawlBody) => void; is
     const body: CrawlWebRequest = {
       urls,
       mode,
-      parser,
-      strategy,
+      parser: DEFAULT_PARSER,
+      strategy: DEFAULT_STRATEGY,
       entity: entity || undefined,
       validity_date: validityDate || undefined,
     };
@@ -250,11 +242,7 @@ function WebForm({ onSubmit, isLoading }: { onSubmit: (b: CrawlBody) => void; is
         />
         <p className="mt-1 text-[11px] text-muted-foreground">Une URL par ligne. Playwright sera utilisé pour le rendu.</p>
       </div>
-      <div className="grid grid-cols-3 gap-3">
-        <Select label="Mode" value={mode} onChange={(v) => setMode(v as 'pdf' | 'html')} options={['pdf', 'html']} />
-        <Select label="Parser" value={parser} onChange={setParser} options={PARSERS} />
-        <Select label="Stratégie" value={strategy} onChange={setStrategy} options={STRATEGIES} />
-      </div>
+      <Select label="Mode" value={mode} onChange={(v) => setMode(v as 'pdf' | 'html')} options={['pdf', 'html']} />
       <EntityFields
         entity={entity}
         onEntityChange={setEntity}
@@ -275,8 +263,6 @@ function SharePointForm({ onSubmit, isLoading }: { onSubmit: (b: CrawlBody) => v
   const [clientId, setClientId] = useState('');
   const [clientSecret, setClientSecret] = useState('');
   const [tenantId, setTenantId] = useState('');
-  const [parser, setParser] = useState<string>('docling');
-  const [strategy, setStrategy] = useState<string>('by_token');
   const [showCreds, setShowCreds] = useState(false);
   const [entity, setEntity] = useState('');
   const [validityDate, setValidityDate] = useState('');
@@ -288,8 +274,8 @@ function SharePointForm({ onSubmit, isLoading }: { onSubmit: (b: CrawlBody) => v
       site_url: siteUrl || undefined,
       site_name: siteName || undefined,
       folder_path: folderPath || undefined,
-      parser,
-      strategy,
+      parser: DEFAULT_PARSER,
+      strategy: DEFAULT_STRATEGY,
       client_id: clientId || undefined,
       client_secret: clientSecret || undefined,
       tenant_id: tenantId || undefined,
@@ -329,12 +315,6 @@ function SharePointForm({ onSubmit, isLoading }: { onSubmit: (b: CrawlBody) => v
           onChange={setFolderPath}
           hint="Laisser vide pour indexer tout le site."
         />
-      </div>
-
-      {/* Parser / Strategy */}
-      <div className="grid grid-cols-2 gap-3">
-        <Select label="Parser" value={parser} onChange={setParser} options={PARSERS} />
-        <Select label="Stratégie" value={strategy} onChange={setStrategy} options={STRATEGIES} />
       </div>
 
       {/* Credentials optionnels */}

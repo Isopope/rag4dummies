@@ -157,8 +157,8 @@ class CrawlLocalRequest(BaseModel):
     directory: str  = Field(..., description="Chemin absolu du répertoire à scanner")
     ext: list[str]  = Field([".pdf", ".docx", ".pptx", ".txt"], description="Extensions acceptées")
     recursive: bool = Field(True, description="Descendre dans les sous-répertoires")
-    parser: str     = Field("docling", description="docling | mineru | simple")
-    strategy: str   = Field("by_token", description="by_token | by_sentence | by_block")
+    parser: str     = Field("mineru", description="docling | mineru | simple")
+    strategy: str   = Field("by_sentence", description="by_token | by_sentence | by_block")
     entity: Optional[str]        = Field(None, description="Entité propriétaire (ex. 'dassault')")
     validity_date: Optional[str] = Field(None, description="Date de validité ISO YYYY-MM-DD")
 
@@ -167,8 +167,8 @@ class CrawlWebRequest(BaseModel):
     urls: list[str] = Field(..., min_length=1, description="URLs à crawler (Playwright → PDF)")
     output_dir: str = Field("./tmp/web_fetch", description="Répertoire temporaire de sortie")
     mode: str       = Field("pdf", description="pdf | html")
-    parser: str     = Field("docling", description="docling | mineru | simple")
-    strategy: str   = Field("by_token", description="by_token | by_sentence | by_block")
+    parser: str     = Field("mineru", description="docling | mineru | simple")
+    strategy: str   = Field("by_sentence", description="by_token | by_sentence | by_block")
     entity: Optional[str]        = Field(None, description="Entité propriétaire")
     validity_date: Optional[str] = Field(None, description="Date de validité ISO YYYY-MM-DD")
 
@@ -178,8 +178,8 @@ class CrawlSharepointRequest(BaseModel):
     site_name: Optional[str] = Field(None, description="Nom court du site (alternatif à site_url)")
     folder_path: Optional[str] = Field(None, description="Sous-dossier à indexer (None = racine)")
     output_dir: str  = Field("./tmp/sharepoint_fetch", description="Répertoire de téléchargement")
-    parser: str      = Field("docling", description="docling | mineru | simple")
-    strategy: str    = Field("by_token", description="by_token | by_sentence | by_block")
+    parser: str      = Field("mineru", description="docling | mineru | simple")
+    strategy: str    = Field("by_sentence", description="by_token | by_sentence | by_block")
     # Credentials optionnels — sinon lus depuis les variables d'environnement
     client_id: Optional[str]     = Field(None, description="App Registration client_id (Entra ID)")
     client_secret: Optional[str] = Field(None, description="App Registration client_secret")

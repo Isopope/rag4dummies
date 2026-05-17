@@ -293,7 +293,7 @@ const Index = () => {
           isDocumentsFetching={isDocumentsFetching}
           onDocumentsPageChange={setDocumentsPageIndex}
           onDocumentsPageSizeChange={setDocumentsPageSize}
-          onUpload={(file, entity, validityDate) => upload(file, undefined, undefined, entity, validityDate)}
+          onUpload={(file, entity, validityDate) => upload(file, entity, validityDate)}
           onDeleteDocument={doDeleteDoc}
         />
       ) : (
