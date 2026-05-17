@@ -20,11 +20,11 @@ Trois tâches :
 """
 from __future__ import annotations
 
-import asyncio
 from datetime import datetime, timedelta, timezone
 
 from celery.utils.log import get_task_logger
 
+from worker.asyncio_runner import run_async
 from worker.app import celery_app
 from worker.queues import LIGHT_QUEUE, INGEST_QUEUE, RagCeleryPriority
 
@@ -48,7 +48,7 @@ def _list_stale_pending() -> list[object]:
         async with get_session_factory()() as session:
             repo = DocumentRepository(session)
             return await repo.list_by_status_before(DocumentStatus.PENDING, cutoff)
-    return asyncio.run(_inner())
+    return run_async(_inner())
 
 
 def _list_error_documents(max_retry: int) -> list[object]:
@@ -60,7 +60,7 @@ def _list_error_documents(max_retry: int) -> list[object]:
         async with get_session_factory()() as session:
             repo = DocumentRepository(session)
             return await repo.list_by_status_retry_lt(DocumentStatus.ERROR, max_retry)
-    return asyncio.run(_inner())
+    return run_async(_inner())
 
 
 def _list_stale_processing() -> list[object]:
@@ -73,7 +73,7 @@ def _list_stale_processing() -> list[object]:
         async with get_session_factory()() as session:
             repo = DocumentRepository(session)
             return await repo.list_by_status_before(DocumentStatus.PROCESSING, cutoff)
-    return asyncio.run(_inner())
+    return run_async(_inner())
 
 
 def _mark_error_batch(source_paths: list[str], message: str) -> None:
@@ -85,7 +85,7 @@ def _mark_error_batch(source_paths: list[str], message: str) -> None:
             for sp in source_paths:
                 await repo.mark_error(sp, message)
             await session.commit()
-    asyncio.run(_inner())
+    run_async(_inner())
 
 
 def _increment_retry_count(source_paths: list[str]) -> None:
@@ -97,7 +97,7 @@ def _increment_retry_count(source_paths: list[str]) -> None:
             for sp in source_paths:
                 await repo.increment_retry_count(sp)
             await session.commit()
-    asyncio.run(_inner())
+    run_async(_inner())
 
 
 # ── Tâches ─────────────────────────────────────────────────────────────────────

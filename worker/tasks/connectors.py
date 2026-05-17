@@ -18,7 +18,6 @@ travail propre est I/O bound ; l'ingestion lourde reste sur INGEST.
 """
 from __future__ import annotations
 
-import asyncio
 import os
 import sys
 from pathlib import Path
@@ -31,6 +30,7 @@ if _PROJECT_ROOT not in sys.path:
 
 from celery.utils.log import get_task_logger
 
+from worker.asyncio_runner import run_async
 from worker.app import celery_app
 from worker.queues import INGEST_QUEUE, LIGHT_QUEUE, RagCeleryPriority
 
@@ -52,7 +52,7 @@ def _is_already_indexed(source_path: str) -> bool:
             repo = DocumentRepository(session)
             doc  = await repo.get_by_source(source_path)
             return doc is not None and doc.status == DocumentStatus.INDEXED
-    return asyncio.run(_inner())
+    return run_async(_inner())
 
 
 def _db_upsert_pending(source_path: str, parser: str, strategy: str) -> None:
@@ -63,7 +63,7 @@ def _db_upsert_pending(source_path: str, parser: str, strategy: str) -> None:
             repo = DocumentRepository(session)
             await repo.upsert(source_path, parser=parser, strategy=strategy)
             await session.commit()
-    asyncio.run(_inner())
+    run_async(_inner())
 
 
 def _dispatch_ingest(object_key: str, parser: str, strategy: str, filename: str) -> str:
@@ -86,7 +86,7 @@ def _dispatch_ingest(object_key: str, parser: str, strategy: str, filename: str)
             if doc:
                 doc.task_id = job.id
             await session.commit()
-    asyncio.run(_set_task_id())
+    run_async(_set_task_id())
 
     return job.id
 

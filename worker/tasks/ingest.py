@@ -18,12 +18,11 @@ Chaque tâche :
 - Met à jour le statut DB (PENDING → PROCESSING → INDEXED | ERROR)
 - Retente jusqu'à MAX_RETRIES fois en cas d'échec
 - Supprime le fichier temporaire même en cas d'exception (finally)
-- Utilise asyncio.run() pour les appels SQLAlchemy async (pattern simple,
-  compatible Celery threaded pool — chaque tâche crée son propre event loop)
+- Exécute les accès SQLAlchemy async sur une boucle dédiée au process worker,
+  réutilisée par toutes les tâches sync du process
 """
 from __future__ import annotations
 
-import asyncio
 import os
 import sys
 import tempfile
@@ -39,6 +38,7 @@ from celery.exceptions import SoftTimeLimitExceeded
 from celery.utils.log import get_task_logger
 from loguru import logger
 
+from worker.asyncio_runner import run_async
 from worker.app import celery_app
 from worker.queues import INGEST_QUEUE, RagCeleryPriority
 
@@ -58,7 +58,7 @@ def _db_upsert(source_path: str, parser: str | None, strategy: str | None, task_
             repo = DocumentRepository(session)
             await repo.upsert(source_path, parser=parser, strategy=strategy, task_id=task_id)
             await session.commit()
-    asyncio.run(_inner())
+    run_async(_inner())
 
 
 def _db_mark_processing(source_path: str) -> None:
@@ -69,7 +69,7 @@ def _db_mark_processing(source_path: str) -> None:
             repo = DocumentRepository(session)
             await repo.mark_processing(source_path)
             await session.commit()
-    asyncio.run(_inner())
+    run_async(_inner())
 
 
 def _db_mark_indexed(source_path: str, chunk_count: int) -> None:
@@ -80,7 +80,7 @@ def _db_mark_indexed(source_path: str, chunk_count: int) -> None:
             repo = DocumentRepository(session)
             await repo.mark_indexed(source_path, chunk_count)
             await session.commit()
-    asyncio.run(_inner())
+    run_async(_inner())
 
 
 def _db_mark_error(source_path: str, error_message: str) -> None:
@@ -91,7 +91,7 @@ def _db_mark_error(source_path: str, error_message: str) -> None:
             repo = DocumentRepository(session)
             await repo.mark_error(source_path, error_message)
             await session.commit()
-    asyncio.run(_inner())
+    run_async(_inner())
 
 
 # ── Utilitaires ────────────────────────────────────────────────────────────────
@@ -195,7 +195,7 @@ def ingest_pdf_task(
 
         # 5. Marquer INDEXED en DB
         _db_mark_indexed(object_key, n)
-    _task_logger.info("Ingestion OK | task=%s object_key=%s chunks=%d", self.request.id, object_key, n)
+        _task_logger.info("Ingestion OK | task=%s object_key=%s chunks=%d", self.request.id, object_key, n)
 
         return {"object_key": object_key, "chunk_count": n, "status": "indexed"}
 
