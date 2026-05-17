@@ -55,23 +55,42 @@ def _is_already_indexed(source_path: str) -> bool:
     return run_async(_inner())
 
 
-def _db_upsert_pending(source_path: str, parser: str, strategy: str) -> None:
+def _db_upsert_pending(
+    source_path: str,
+    parser: str,
+    strategy: str,
+    entity: str | None = None,
+    validity_date: str | None = None,
+) -> None:
     async def _inner() -> None:
         from db.engine import get_session_factory
         from db.repositories.document import DocumentRepository
         async with get_session_factory()() as session:
             repo = DocumentRepository(session)
-            await repo.upsert(source_path, parser=parser, strategy=strategy)
+            await repo.upsert(
+                source_path,
+                parser=parser,
+                strategy=strategy,
+                entity=entity,
+                validity_date=validity_date,
+            )
             await session.commit()
     run_async(_inner())
 
 
-def _dispatch_ingest(object_key: str, parser: str, strategy: str, filename: str) -> str:
+def _dispatch_ingest(
+    object_key: str,
+    parser: str,
+    strategy: str,
+    filename: str,
+    entity: str | None = None,
+    validity_date: str | None = None,
+) -> str:
     """Dispatche ingest_pdf_task et met à jour task_id en DB. Retourne le task_id."""
     from worker.tasks.ingest import ingest_pdf_task
 
     job = ingest_pdf_task.apply_async(
-        args     = [object_key, parser, strategy, filename],
+        args     = [object_key, parser, strategy, filename, entity, validity_date],
         queue    = INGEST_QUEUE,
         priority = int(RagCeleryPriority.MEDIUM),
     )
@@ -96,6 +115,8 @@ def _upload_and_dispatch(
     source_label: str,
     parser: str,
     strategy: str,
+    entity: str | None = None,
+    validity_date: str | None = None,
 ) -> dict[str, str] | None:
     """
     Upload un FetchedDocument.path dans le DocumentStore et dispatche l'ingestion.
@@ -123,8 +144,15 @@ def _upload_and_dispatch(
     doc_store.upload(content, object_key, content_type=mime)
 
     # DB + dispatch
-    _db_upsert_pending(object_key, parser, strategy)
-    task_id = _dispatch_ingest(object_key, parser, strategy, doc_path.name)
+    _db_upsert_pending(object_key, parser, strategy, entity=entity, validity_date=validity_date)
+    task_id = _dispatch_ingest(
+        object_key,
+        parser,
+        strategy,
+        doc_path.name,
+        entity=entity,
+        validity_date=validity_date,
+    )
 
     _logger.info("Dispatché : %s → task_id=%s", object_key, task_id)
     return {"object_key": object_key, "task_id": task_id, "source_label": source_label}
@@ -175,7 +203,14 @@ def crawl_local_task(
     for doc in docs:
         if doc.path is None:
             continue
-        r = _upload_and_dispatch(Path(doc.path), str(doc.source), parser, strategy)
+        r = _upload_and_dispatch(
+            Path(doc.path),
+            str(doc.source),
+            parser,
+            strategy,
+            entity=entity,
+            validity_date=validity_date,
+        )
         if r:
             results.append(r)
         else:
@@ -235,7 +270,14 @@ def crawl_web_task(
     for doc in docs:
         if doc.path is None:
             continue
-        r = _upload_and_dispatch(Path(doc.path), str(doc.source), parser, strategy)
+        r = _upload_and_dispatch(
+            Path(doc.path),
+            str(doc.source),
+            parser,
+            strategy,
+            entity=entity,
+            validity_date=validity_date,
+        )
         if r:
             results.append(r)
         else:
@@ -323,7 +365,14 @@ def crawl_sharepoint_task(
     for doc in docs:
         if doc.path is None:
             continue
-        r = _upload_and_dispatch(Path(doc.path), str(doc.source), parser, strategy)
+        r = _upload_and_dispatch(
+            Path(doc.path),
+            str(doc.source),
+            parser,
+            strategy,
+            entity=entity,
+            validity_date=validity_date,
+        )
         if r:
             results.append(r)
         else:
