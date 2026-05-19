@@ -1,5 +1,4 @@
-import { useState, useCallback, useEffect, useRef } from 'react';
-import { useLocation, useNavigate, useParams } from 'react-router-dom';
+import { useState, useCallback, useMemo } from 'react';
 import AppLayout from '@/components/layout/AppLayout';
 import ChatSidebar from '@/components/chat/ChatSidebar';
 import ChatArea from '@/components/chat/ChatArea';
@@ -9,43 +8,21 @@ import IngestionPage from '@/components/ingestion/IngestionPage';
 import Admin from '@/pages/Admin';
 import type { ChatInputSubmitPayload } from '@/components/chat/ChatInput';
 import type { ChatMessage, ChatSession, MessageFeedback, MessageSource } from '@/types/chat';
-import type { AppView } from '@/types/layout';
 import { useRagQuery } from '@/hooks/use-rag-query';
 import { useSessions } from '@/hooks/use-sessions';
 import { useIngest } from '@/hooks/use-ingest';
 import { useDocuments } from '@/hooks/use-documents';
-import { getSession } from '@/lib/api';
 import { useAuth } from '@/context/AuthContext';
 import { PdfGroundingModal } from '@/components/chat/PdfGroundingModal';
-
-const VIEW_PATHS: Record<AppView, string> = {
-  chat: '/chat',
-  ingestion: '/ingestion',
-  admin: '/admin',
-};
-
-function viewFromPath(pathname: string): AppView {
-  if (pathname.startsWith('/chat')) return 'chat';
-  if (pathname === '/ingestion') return 'ingestion';
-  if (pathname === '/admin') return 'admin';
-  return 'chat';
-}
+import { useIndexRouting } from '@/hooks/use-index-routing';
 
 const Index = () => {
   const { isAdmin, isLoading: isAuthLoading, token } = useAuth();
-  const location = useLocation();
-  const navigate = useNavigate();
-  const { conversationId } = useParams<{ conversationId?: string }>();
   const [documentSidebar, setDocumentSidebar] = useState<{
     messageId: string;
     sources: MessageSource[];
   } | null>(null);
   const [viewerSource, setViewerSource] = useState<MessageSource | null>(null);
-  const activeView = viewFromPath(location.pathname);
-  const isChatView = activeView === 'chat';
-  const loadedConversationIdRef = useRef<string | null>(null);
-  const previousConversationIdRef = useRef<string | undefined>(conversationId);
-  const previousTokenRef = useRef<string | null>(token);
 
   const { messages, isStreaming, conversationTitle, sessionId, sendMessage, stopGenerating, regenerateMessage, sendFeedback, clearMessages, loadSession } =
     useRagQuery();
@@ -64,105 +41,45 @@ const Index = () => {
     deleteDocument: doDeleteDoc,
   } = useDocuments();
 
-  useEffect(() => {
-    if (isAuthLoading) return;
-    if ((activeView === 'ingestion' || activeView === 'admin') && !isAdmin) {
-      navigate(VIEW_PATHS.chat, { replace: true });
-    }
-  }, [activeView, isAdmin, isAuthLoading, navigate]);
-
-  useEffect(() => {
-    const previousToken = previousTokenRef.current;
-    previousTokenRef.current = token;
-
-    if (isAuthLoading) return;
-
-    const hasLoggedOut = !!previousToken && !token;
-    const hasProtectedConversationUrl = !token && !!conversationId;
-
-    if (!hasLoggedOut && !hasProtectedConversationUrl) return;
-
-    clearMessages();
+  const resetPanels = useCallback(() => {
     setDocumentSidebar(null);
     setViewerSource(null);
-    loadedConversationIdRef.current = null;
-    previousConversationIdRef.current = undefined;
+  }, []);
 
-    if (location.pathname !== VIEW_PATHS.chat || conversationId) {
-      navigate(VIEW_PATHS.chat, { replace: true });
-    }
-  }, [clearMessages, conversationId, isAuthLoading, location.pathname, navigate, token]);
+  const {
+    activeView,
+    activeSessionId,
+    navigateToView,
+    startNewSession,
+    openSession,
+  } = useIndexRouting({
+    isAdmin,
+    isAuthLoading,
+    token,
+    sessionId,
+    conversationTitle,
+    clearMessages,
+    loadSession,
+    refreshSessions,
+    resetPanels,
+  });
 
-  // -- route → state : charger la conversation indiquée dans l'URL --
-  useEffect(() => {
-    if (!isChatView) return;
-    const previousConversationId = previousConversationIdRef.current;
-    previousConversationIdRef.current = conversationId;
+  const displayedSessions: ChatSession[] = useMemo(() => {
+    return sessions.map((session) => {
+      const isActiveUntitledSession =
+        session.id === activeSessionId &&
+        !!conversationTitle &&
+        session.title !== conversationTitle;
 
-    if (!conversationId) {
-      loadedConversationIdRef.current = null;
-      if (previousConversationId) clearMessages();
-      return;
-    }
-    if (!token) return;
-    if (loadedConversationIdRef.current === conversationId) return;
-
-    loadedConversationIdRef.current = conversationId;
-    let cancelled = false;
-
-    getSession(conversationId, token)
-      .then((detail) => {
-        if (cancelled) return;
-        loadSession(detail);
-      })
-      .catch(() => {
-        if (cancelled) return;
-        loadedConversationIdRef.current = null;
-        clearMessages();
-        navigate(VIEW_PATHS.chat, { replace: true });
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [clearMessages, conversationId, isChatView, loadSession, navigate, token]);
-
-  // -- state → route : donner une vraie URL à une nouvelle conversation --
-  useEffect(() => {
-    if (!isChatView) return;
-    if (conversationId) return;
-    if (!sessionId) return;
-    loadedConversationIdRef.current = sessionId;
-    navigate(`${VIEW_PATHS.chat}/${sessionId}`, { replace: true });
-  }, [conversationId, isChatView, navigate, sessionId]);
-
-  // -- Auto-naming : rafraîchir la liste dès que le LLM a généré un titre --
-  // Le titre est déjà persisté en DB (via append_turn dans query.py) quand cet effet se déclenche.
-  useEffect(() => {
-    if (conversationTitle && sessionId) {
-      refreshSessions();
-    }
-  }, [conversationTitle]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // ID de la session active
-  const activeSessionId = conversationId ?? sessionId ?? null;
-
-  // Sessions formatées pour ChatSidebar (type ChatSession)
-  const displayedSessions: ChatSession[] = sessions.map((s) => ({
-    id: s.id,
-    title: s.title ?? 'Conversation sans titre',
-    lastMessage: s.last_message ?? '',
-    timestamp: new Date(s.updated_at),
-    messageCount: s.message_count,
-  }));
-
-  // Met à jour le titre dans la sidebar quand le LLM le génère
-  if (activeSessionId && conversationTitle) {
-    const idx = displayedSessions.findIndex((s) => s.id === activeSessionId);
-    if (idx >= 0 && displayedSessions[idx].title !== conversationTitle) {
-      displayedSessions[idx] = { ...displayedSessions[idx], title: conversationTitle };
-    }
-  }
+      return {
+        id: session.id,
+        title: isActiveUntitledSession ? conversationTitle : (session.title ?? 'Conversation sans titre'),
+        lastMessage: session.last_message ?? '',
+        timestamp: new Date(session.updated_at),
+        messageCount: session.message_count,
+      };
+    });
+  }, [activeSessionId, conversationTitle, sessions]);
 
   const handleSend = useCallback(
     (payload: ChatInputSubmitPayload | string) => {
@@ -190,35 +107,14 @@ const Index = () => {
     setDocumentSidebar({ messageId: message.id, sources: message.sources });
   }, []);
 
-  const handleNewSession = useCallback(() => {
-    clearMessages();
-    setDocumentSidebar(null);
-    loadedConversationIdRef.current = null;
-    navigate(VIEW_PATHS.chat, { replace: true });
-  }, [clearMessages, navigate]);
-
-  const handleSelectSession = useCallback(
-    (id: string) => {
-      if (id === activeSessionId) return;
-      clearMessages();
-      setDocumentSidebar(null);
-      loadedConversationIdRef.current = null;
-      navigate(`${VIEW_PATHS.chat}/${id}`);
-    },
-    [activeSessionId, clearMessages, navigate],
-  );
-
   const handleDeleteSession = useCallback(
     (id: string) => {
       doDelete(id);
       if (id === activeSessionId) {
-        clearMessages();
-        setDocumentSidebar(null);
-        loadedConversationIdRef.current = null;
-        navigate(VIEW_PATHS.chat, { replace: true });
+        startNewSession();
       }
     },
-    [activeSessionId, clearMessages, doDelete, navigate],
+    [activeSessionId, doDelete, startNewSession],
   );
 
   const handleRenameSession = useCallback(
@@ -231,18 +127,13 @@ const Index = () => {
   return (
     <AppLayout
       activeView={activeView}
-      onViewChange={(view) => {
-        if ((view === 'ingestion' || view === 'admin') && !isAdmin) return;
-        const pathname = view === 'chat' && sessionId ? `${VIEW_PATHS.chat}/${sessionId}` : VIEW_PATHS[view];
-        if (pathname === location.pathname) return;
-        navigate(pathname);
-      }}
+      onViewChange={navigateToView}
       sidebar={
         <ChatSidebar
           sessions={displayedSessions}
           activeSessionId={activeSessionId ?? ''}
-          onSelectSession={handleSelectSession}
-          onNewSession={handleNewSession}
+          onSelectSession={openSession}
+          onNewSession={startNewSession}
           onDeleteSession={handleDeleteSession}
           onRenameSession={handleRenameSession}
         />
