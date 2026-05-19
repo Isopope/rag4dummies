@@ -17,11 +17,16 @@ import {
   type CrawlWebRequest,
 } from '@/lib/api';
 import { useAuth } from '@/context/AuthContext';
+import {
+  buildPollingDelayMessage,
+  mapCeleryStateToConnectorStatus,
+  type FrontendConnectorStatus,
+} from '@/lib/workflow-state';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 export type ConnectorType = 'local' | 'web' | 'sharepoint';
-export type ConnectorStatus = 'idle' | 'queued' | 'syncing' | 'connected' | 'error';
+export type ConnectorStatus = FrontendConnectorStatus;
 
 export type CrawlBody = CrawlLocalRequest | CrawlWebRequest | CrawlSharepointRequest;
 
@@ -43,6 +48,7 @@ interface PersistedJob {
   message: string;
   /** Dernier état Celery connu — pour éviter de re-poll un job terminé. */
   celeryState?: string;
+  consecutiveFailures?: number;
 }
 
 const LS_KEY = (type: ConnectorType) => `rag_crawl_${type}`;
@@ -66,12 +72,6 @@ const CONNECTOR_META: Record<ConnectorType, { name: string; icon: string; descri
 };
 
 const TERMINAL_STATES = new Set(['SUCCESS', 'FAILURE', 'REVOKED']);
-
-function celeryToStatus(state: string): ConnectorStatus {
-  if (state === 'SUCCESS') return 'connected';
-  if (state === 'FAILURE' || state === 'REVOKED') return 'error';
-  return 'syncing';
-}
 
 function loadJob(type: ConnectorType): PersistedJob | null {
   try {
@@ -123,7 +123,12 @@ export function useConnectors() {
           setJobs((prev) => {
             const existing = prev[type];
             if (!existing) return prev;
-            const updated: PersistedJob = { ...existing, celeryState };
+            const updated: PersistedJob = {
+              ...existing,
+              celeryState,
+              consecutiveFailures: 0,
+              message: job.error ?? existing.message,
+            };
             saveJob(type, updated);
             return { ...prev, [type]: updated };
           });
@@ -133,7 +138,18 @@ export function useConnectors() {
             delete intervals.current[type];
           }
         } catch {
-          // Silently retry — le job peut ne pas encore être en DB
+          setJobs((prev) => {
+            const existing = prev[type];
+            if (!existing) return prev;
+            const consecutiveFailures = (existing.consecutiveFailures ?? 0) + 1;
+            const updated: PersistedJob = {
+              ...existing,
+              consecutiveFailures,
+              message: buildPollingDelayMessage(`du connecteur ${CONNECTOR_META[type].name.toLowerCase()}`),
+            };
+            saveJob(type, updated);
+            return { ...prev, [type]: updated };
+          });
         }
       }, 5000);
     },
@@ -176,6 +192,7 @@ export function useConnectors() {
           launchedAt: new Date().toISOString(),
           message: resp.message,
           celeryState: 'PENDING',
+          consecutiveFailures: 0,
         };
         saveJob(type, persisted);
         setJobs((prev) => ({ ...prev, [type]: persisted }));
@@ -200,8 +217,7 @@ export function useConnectors() {
 
     let status: ConnectorStatus = 'idle';
     if (job) {
-      if (!job.celeryState || job.celeryState === 'PENDING') status = 'queued';
-      else status = celeryToStatus(job.celeryState);
+      status = mapCeleryStateToConnectorStatus(job.celeryState, job.consecutiveFailures ?? 0);
     }
 
     return {

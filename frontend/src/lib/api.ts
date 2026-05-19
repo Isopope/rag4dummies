@@ -107,6 +107,8 @@ export interface StreamEvent {
   conversation_title?: string;
   question_id?: string;
   session_id?: string;
+  session_saved?: boolean;
+  warnings?: string[];
   usage?: TokenUsageSummary;
   error?: string;
 }

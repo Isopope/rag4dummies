@@ -4,10 +4,16 @@ import type { JobStatusResponse } from '@/lib/api';
 import type { UploadedFile } from '@/types/chat';
 import { useAuth } from '@/context/AuthContext';
 import { toast } from 'sonner';
+import {
+  buildPollingDelayMessage,
+  isPollingDegraded,
+  mapJobToIngestStatus,
+} from '@/lib/workflow-state';
 
 interface PendingJob {
   taskId: string;
   fileId: string;
+  consecutiveFailures: number;
 }
 
 const DEFAULT_PARSER = 'mineru';
@@ -31,18 +37,42 @@ export function useIngest() {
       for (const job of jobs) {
         try {
           const status: JobStatusResponse = await getJobStatus(job.taskId, token!);
-          if (status.status === 'indexed') {
-            updateFile(job.fileId, { status: 'indexed', progress: 100 });
+          const mappedStatus = mapJobToIngestStatus(status.status, status.celery_state);
+          pendingRef.current = pendingRef.current.map((pending) =>
+            pending.fileId === job.fileId ? { ...pending, consecutiveFailures: 0 } : pending,
+          );
+
+          if (mappedStatus === 'indexed') {
+            updateFile(job.fileId, { status: 'indexed', progress: 100, statusMessage: undefined });
             pendingRef.current = pendingRef.current.filter((j) => j.fileId !== job.fileId);
-          } else if (status.status === 'error') {
-            updateFile(job.fileId, { status: 'error', progress: undefined });
+          } else if (mappedStatus === 'error') {
+            updateFile(job.fileId, {
+              status: 'error',
+              progress: undefined,
+              statusMessage: status.error ?? undefined,
+            });
             pendingRef.current = pendingRef.current.filter((j) => j.fileId !== job.fileId);
-            toast.error(`Indexation échouée : ${status.filename ?? job.taskId}`);
+            toast.error(`Indexation échouée : ${status.error ?? status.filename ?? job.taskId}`);
           } else {
-            updateFile(job.fileId, { status: 'processing', progress: 50 });
+            updateFile(job.fileId, {
+              status: mappedStatus,
+              progress: mappedStatus === 'queued' ? 20 : 50,
+              statusMessage: undefined,
+            });
           }
         } catch {
-          // Network error — retry next tick
+          const nextFailures = job.consecutiveFailures + 1;
+          pendingRef.current = pendingRef.current.map((pending) =>
+            pending.fileId === job.fileId ? { ...pending, consecutiveFailures: nextFailures } : pending,
+          );
+
+          if (isPollingDegraded(nextFailures)) {
+            updateFile(job.fileId, {
+              status: 'degraded',
+              progress: undefined,
+              statusMessage: buildPollingDelayMessage("de l'indexation"),
+            });
+          }
         }
       }
     }, 3000);
@@ -79,12 +109,12 @@ export function useIngest() {
 
       try {
         const resp = await uploadDocument(file, DEFAULT_PARSER, DEFAULT_STRATEGY, token, entity, validityDate);
-        updateFile(id, { status: 'processing', progress: 30 });
-        pendingRef.current.push({ taskId: resp.task_id, fileId: id });
+        updateFile(id, { status: 'queued', progress: 20, statusMessage: undefined });
+        pendingRef.current.push({ taskId: resp.task_id, fileId: id, consecutiveFailures: 0 });
         toast.success(`"${file.name}" soumis à l'indexation.`);
       } catch (err) {
         const msg = err instanceof Error ? err.message : 'Erreur upload';
-        updateFile(id, { status: 'error', progress: undefined });
+        updateFile(id, { status: 'error', progress: undefined, statusMessage: msg });
         toast.error(`Upload échoué : ${msg}`);
       }
     },

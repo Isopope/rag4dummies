@@ -110,6 +110,8 @@ class StreamEvent(BaseModel):
     conversation_title: Optional[str] = None
     question_id: Optional[str] = None
     session_id: Optional[str] = None
+    session_saved: Optional[bool] = None
+    warnings: list[str] = []
     usage: Optional[TokenUsageSummary] = None
     error: Optional[str] = None
 

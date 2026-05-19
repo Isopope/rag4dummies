@@ -24,7 +24,7 @@ interface IngestionPageProps {
 
 function docToUploadedFile(doc: DocumentItem): UploadedFile {
   const statusMap: Record<string, UploadedFile['status']> = {
-    pending: 'processing',
+    pending: 'queued',
     processing: 'processing',
     indexed: 'indexed',
     error: 'error',
@@ -36,7 +36,8 @@ function docToUploadedFile(doc: DocumentItem): UploadedFile {
     size: doc.chunk_count ? `${doc.chunk_count} chunks` : '-',
     type: 'application/pdf',
     status: statusMap[doc.status] ?? 'processing',
-    progress: doc.status === 'indexed' ? 100 : doc.status === 'error' ? undefined : 50,
+    progress: doc.status === 'indexed' ? 100 : doc.status === 'error' ? undefined : doc.status === 'pending' ? 20 : 50,
+    statusMessage: doc.error_message ?? undefined,
     uploadedAt: new Date(doc.created_at),
   };
 }
@@ -66,10 +67,12 @@ const IngestionPage = ({
   );
 
   const activeConnectors = connectors.filter(
-    (c) => c.status === 'connected' || c.status === 'syncing' || c.status === 'queued',
+    (c) => c.status === 'connected' || c.status === 'syncing' || c.status === 'queued' || c.status === 'degraded',
   ).length;
 
-  const activeUploads = uploadingFiles.filter((file) => file.status === 'uploading');
+  const activeUploads = uploadingFiles.filter(
+    (file) => file.status === 'uploading' || file.status === 'queued' || file.status === 'processing' || file.status === 'degraded',
+  );
   const pagedFiles = documents.map(docToUploadedFile);
 
   const handleLaunch = async (body: CrawlBody) => {

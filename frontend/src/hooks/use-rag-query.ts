@@ -11,6 +11,7 @@ import type {
 import type { ChatInputSubmitPayload } from '@/components/chat/ChatInput';
 import { toast } from 'sonner';
 import { useAuth } from '@/context/AuthContext';
+import { IDLE_CHAT_RUN_STATE, resolveSessionSaveStatus, type ChatRunState } from '@/lib/workflow-state';
 
 function chunkToSource(c: ChunkModel): MessageSource {
   return {
@@ -119,11 +120,12 @@ function nodeLabel(node: string): string {
 }
 
 export function useRagQuery() {
-  const { token } = useAuth();
+  const { token, isAuthenticated } = useAuth();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [isStreaming, setIsStreaming] = useState(false);
   const [conversationTitle, setConversationTitle] = useState<string | undefined>();
   const [sessionId, setSessionId] = useState<string | undefined>();
+  const [runState, setRunState] = useState<ChatRunState>(IDLE_CHAT_RUN_STATE);
   const abortRef = useRef<AbortController | null>(null);
   // Always-current refs so callbacks don't need state in dep array
   const messagesRef = useRef<ChatMessage[]>([]);
@@ -155,11 +157,18 @@ export function useRagQuery() {
       contents: [{ type: 'text', text: '' }],
       timestamp: new Date(),
       isStreaming: true,
+      lifecycleStatus: 'streaming',
       steps: [],
     };
 
     initMessages(assistantPlaceholder);
     setIsStreaming(true);
+    setRunState({
+      status: 'starting',
+      sessionSaveStatus: 'idle',
+      warnings: [],
+      activeAssistantId: assistantId,
+    });
 
     let accText = '';
     let finalSources: ChunkModel[] = [];
@@ -168,6 +177,9 @@ export function useRagQuery() {
     let finalTitle: string | undefined;
     let finalQuestionId: string | undefined;
     let finalUsage: TokenUsageSummary | undefined;
+    let finalWarnings: string[] = [];
+    let finalSessionSaved: boolean | undefined;
+    let hasStreamStarted = false;
     const steps: AgentStep[] = [];
 
     try {
@@ -176,6 +188,10 @@ export function useRagQuery() {
         controller.signal,
         token,
       )) {
+        if (!hasStreamStarted) {
+          hasStreamStarted = true;
+          setRunState((prev) => ({ ...prev, status: 'streaming' }));
+        }
         if (event.type === 'node_update' && event.node) {
           const prev = steps.find((s) => s.status === 'running');
           if (prev) prev.status = 'done';
@@ -204,6 +220,8 @@ export function useRagQuery() {
           finalFollowUps      = event.follow_up_suggestions ?? [];
           finalTitle          = event.conversation_title;
           finalQuestionId     = event.question_id;
+          finalSessionSaved   = event.session_saved;
+          finalWarnings       = event.warnings ?? [];
           finalUsage          = event.usage;
           if (event.session_id) setSessionId(event.session_id);
         } else if (event.type === 'error') {
@@ -213,6 +231,20 @@ export function useRagQuery() {
 
       steps.forEach((s) => { s.status = 'done'; });
       if (finalTitle) setConversationTitle(finalTitle);
+      if (finalWarnings.length > 0) {
+        toast.warning(finalWarnings[0]);
+      }
+
+      const sessionSaveStatus = resolveSessionSaveStatus(finalSessionSaved, isAuthenticated);
+      const lifecycleStatus =
+        finalWarnings.length > 0 || sessionSaveStatus === 'save_failed' ? 'degraded' : 'completed';
+
+      setRunState({
+        status: lifecycleStatus,
+        sessionSaveStatus,
+        warnings: finalWarnings,
+        activeAssistantId: assistantId,
+      });
 
       const feedbackContext: MessageFeedbackContext = {
         questionId: finalQuestionId || undefined,
@@ -232,11 +264,13 @@ export function useRagQuery() {
                 ...m,
                 contents: [{ type: 'text', text: accText }],
                 isStreaming: false,
+                lifecycleStatus,
                 sources: finalSources.length ? finalSources.map(chunkToSource) : undefined,
                 citationSources: finalCitationInfos.length
                   ? buildCitationSources(finalCitationInfos, finalSources)
                   : undefined,
                 followUpSuggestions: finalFollowUps.length ? finalFollowUps : undefined,
+                warnings: finalWarnings.length ? finalWarnings : undefined,
                 steps: [...steps],
                 feedbackContext,
               }
@@ -244,21 +278,55 @@ export function useRagQuery() {
         ),
       );
     } catch (err) {
-      if ((err as Error).name === 'AbortError') return;
+      steps.forEach((s) => { s.status = 'done'; });
+      if ((err as Error).name === 'AbortError') {
+        setRunState({
+          status: 'cancelled',
+          sessionSaveStatus: resolveSessionSaveStatus(undefined, isAuthenticated),
+          warnings: [],
+          activeAssistantId: assistantId,
+        });
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === assistantId
+              ? {
+                  ...m,
+                  contents: [{ type: 'text', text: accText || 'Génération interrompue.' }],
+                  isStreaming: false,
+                  lifecycleStatus: 'cancelled',
+                  steps: [...steps],
+                }
+              : m,
+          ),
+        );
+        return;
+      }
       const msg = err instanceof Error ? err.message : 'Erreur de connexion';
       toast.error(`Erreur : ${msg}`);
-      steps.forEach((s) => { s.status = 'done'; });
+      setRunState({
+        status: 'failed',
+        sessionSaveStatus: resolveSessionSaveStatus(undefined, isAuthenticated),
+        warnings: [],
+        activeAssistantId: assistantId,
+        error: msg,
+      });
       setMessages((prev) =>
         prev.map((m) =>
           m.id === assistantId
-            ? { ...m, contents: [{ type: 'text', text: `❌ ${msg}` }], isStreaming: false, steps: [...steps] }
+            ? {
+                ...m,
+                contents: [{ type: 'text', text: `❌ ${msg}` }],
+                isStreaming: false,
+                lifecycleStatus: 'failed',
+                steps: [...steps],
+              }
             : m,
         ),
       );
     } finally {
       setIsStreaming(false);
     }
-  }, [token]);
+  }, [isAuthenticated, token]);
 
   const sendMessage = useCallback(async (payload: ChatInputSubmitPayload | string) => {
     const text = typeof payload === 'string' ? payload : payload.text;
@@ -348,6 +416,7 @@ export function useRagQuery() {
     setIsStreaming(false);
     setConversationTitle(undefined);
     setSessionId(undefined);
+    setRunState(IDLE_CHAT_RUN_STATE);
     messagesRef.current = [];
   }, []);
 
@@ -356,6 +425,7 @@ export function useRagQuery() {
     abortRef.current?.abort();
     setSessionId(detail.id);
     setConversationTitle(detail.title ?? undefined);
+    setRunState(IDLE_CHAT_RUN_STATE);
 
     const restored: ChatMessage[] = [];
     for (const m of detail.messages) {
@@ -385,6 +455,7 @@ export function useRagQuery() {
           role: 'assistant',
           contents: [{ type: 'text', text: m.content }],
           timestamp: new Date(m.created_at),
+          lifecycleStatus: 'completed',
           sources: sources.length ? sources : undefined,
           followUpSuggestions: m.follow_up_suggestions.length ? m.follow_up_suggestions : undefined,
           feedbackContext: previousUser
@@ -405,5 +476,5 @@ export function useRagQuery() {
     messagesRef.current = restored;
   }, []);
 
-  return { messages, isStreaming, conversationTitle, sessionId, sendMessage, stopGenerating, regenerateMessage, sendFeedback, clearMessages, loadSession };
+  return { messages, isStreaming, runState, conversationTitle, sessionId, sendMessage, stopGenerating, regenerateMessage, sendFeedback, clearMessages, loadSession };
 }

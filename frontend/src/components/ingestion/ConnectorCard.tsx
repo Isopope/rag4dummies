@@ -1,4 +1,4 @@
-import { HardDrive, Globe, Cloud, RefreshCw, AlertCircle, CheckCircle2, Loader2, Clock, Settings } from 'lucide-react';
+import { HardDrive, Globe, Cloud, RefreshCw, AlertCircle, CheckCircle2, Loader2, Clock, Settings, AlertTriangle } from 'lucide-react';
 import type { ConnectorCardState, ConnectorStatus, ConnectorType } from '@/hooks/use-connectors';
 
 const iconMap: Record<ConnectorType, React.FC<{ className?: string }>> = {
@@ -13,6 +13,7 @@ const statusConfig: Record<ConnectorStatus, { label: string; color: string; icon
   syncing: { label: 'En cours…', color: 'text-info', icon: Loader2 },
   connected: { label: 'Indexé', color: 'text-success', icon: CheckCircle2 },
   error: { label: 'Erreur', color: 'text-destructive', icon: AlertCircle },
+  degraded: { label: 'Suivi dégradé', color: 'text-amber-600 dark:text-amber-300', icon: AlertTriangle },
 };
 
 interface ConnectorCardProps {
@@ -71,8 +72,11 @@ const ConnectorCard = ({ connector, onConfigure }: ConnectorCardProps) => {
           {connector.lastLaunchedAt && (
             <span className="truncate">Dernier lancement : {formatTime(connector.lastLaunchedAt)}</span>
           )}
-          {connector.lastMessage && connector.status === 'error' && (
-            <span className="text-destructive truncate max-w-[160px]" title={connector.lastMessage}>
+          {connector.lastMessage && (connector.status === 'error' || connector.status === 'degraded') && (
+            <span
+              className={`${connector.status === 'error' ? 'text-destructive' : 'text-amber-600 dark:text-amber-300'} truncate max-w-[160px]`}
+              title={connector.lastMessage}
+            >
               {connector.lastMessage}
             </span>
           )}
@@ -84,7 +88,7 @@ const ConnectorCard = ({ connector, onConfigure }: ConnectorCardProps) => {
       </div>
 
       {/* Bouton principal visible en idle ou après erreur */}
-      {(connector.status === 'idle' || connector.status === 'error') && (
+      {(connector.status === 'idle' || connector.status === 'error' || connector.status === 'degraded') && (
         <button
           onClick={() => onConfigure(connector.type)}
           disabled={connector.isLaunching}

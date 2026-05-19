@@ -1,5 +1,6 @@
 import type { ChunkModel, TokenUsageSummary } from '@/lib/api';
 import type { CellValue } from '@/lib/table-utils';
+import type { ChatRunStatus, FrontendConnectorStatus, FrontendIngestStatus } from '@/lib/workflow-state';
 
 export type MessageContentType = 'text' | 'image' | 'chart' | 'json' | 'code' | 'file' | 'table';
 
@@ -86,11 +87,13 @@ export interface ChatMessage {
   contents: MessageContent[];
   timestamp: Date;
   isStreaming?: boolean;
+  lifecycleStatus?: Exclude<ChatRunStatus, 'idle' | 'starting'>;
   feedback?: MessageFeedback;
   sources?: MessageSource[];
   /** Map citation_number → MessageSource, built from citation_infos at done event. */
   citationSources?: Record<number, MessageSource>;
   followUpSuggestions?: string[];
+  warnings?: string[];
   attachedImages?: AttachedImage[];
   /** Agent processing steps (populated from SSE node_update events) */
   steps?: AgentStep[];
@@ -106,7 +109,7 @@ export interface ChatSession {
   messageCount: number;
 }
 
-export type ConnectorStatus = 'connected' | 'syncing' | 'error' | 'disconnected';
+export type ConnectorStatus = FrontendConnectorStatus;
 
 export interface Connector {
   id: string;
@@ -124,7 +127,8 @@ export interface UploadedFile {
   name: string;
   size: string;
   type: string;
-  status: 'uploading' | 'processing' | 'indexed' | 'error';
+  status: FrontendIngestStatus;
   progress?: number;
+  statusMessage?: string;
   uploadedAt: Date;
 }

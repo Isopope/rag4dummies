@@ -1,5 +1,5 @@
 import { useRef, useEffect, useMemo, useState, useCallback } from 'react';
-import { Bot, ArrowDown } from 'lucide-react';
+import { Bot, ArrowDown, AlertTriangle } from 'lucide-react';
 import { ChatMessage, MessageFeedback, MessageSource } from '@/types/chat';
 import MessageRenderer from './MessageRenderer';
 import FollowUpSuggestions from './FollowUpSuggestions';
@@ -122,6 +122,19 @@ const AssistantMessage = ({
           steps={msg.steps}
           isStreaming={msg.isStreaming}
         />
+      )}
+
+      {msg.warnings && msg.warnings.length > 0 && (
+        <div className="flex items-start gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-300">
+          <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+          <div className="min-w-0">
+            {msg.warnings.map((warning, index) => (
+              <p key={`${msg.id}-warning-${index}`} className="leading-relaxed">
+                {warning}
+              </p>
+            ))}
+          </div>
+        </div>
       )}
 
       {/* Streaming shimmer when no text yet */}

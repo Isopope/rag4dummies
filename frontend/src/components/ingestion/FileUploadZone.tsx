@@ -1,5 +1,5 @@
 import { useRef, useCallback, useState, type DragEvent } from 'react';
-import { Upload, File, CheckCircle2, Loader2, AlertCircle, Trash2, type LucideIcon } from 'lucide-react';
+import { Upload, File, CheckCircle2, Loader2, AlertCircle, Trash2, Clock3, AlertTriangle, type LucideIcon } from 'lucide-react';
 import type { UploadedFile } from '@/types/chat';
 import type { DocumentItem } from '@/lib/api';
 import { useEntities } from '@/hooks/use-entities';
@@ -22,23 +22,29 @@ interface FileUploadZoneProps {
 
 const statusIcon: Record<string, LucideIcon> = {
   indexed: CheckCircle2,
+  queued: Clock3,
   processing: Loader2,
   uploading: Loader2,
   error: AlertCircle,
+  degraded: AlertTriangle,
 };
 
 const statusLabel: Record<string, string> = {
   indexed: 'Indexe',
+  queued: 'En attente',
   processing: 'Traitement...',
   uploading: 'Upload...',
   error: 'Erreur',
+  degraded: 'Suivi degrade',
 };
 
 const statusColor: Record<string, string> = {
   indexed: 'text-success',
+  queued: 'text-info',
   processing: 'text-info',
   uploading: 'text-primary',
   error: 'text-destructive',
+  degraded: 'text-amber-600 dark:text-amber-300',
 };
 
 function FileRow({
@@ -64,6 +70,11 @@ function FileRow({
           {errorMessage && (
             <span className="max-w-[200px] truncate text-[11px] text-destructive" title={errorMessage}>
               {errorMessage}
+            </span>
+          )}
+          {file.statusMessage && !errorMessage && (
+            <span className="max-w-[240px] truncate text-[11px] text-muted-foreground" title={file.statusMessage}>
+              {file.statusMessage}
             </span>
           )}
           {file.progress !== undefined && file.status !== 'indexed' && (

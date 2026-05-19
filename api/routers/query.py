@@ -220,6 +220,8 @@ async def query_stream(
         question_id: str | None      = None
         usage_summary: dict | None   = None
         raw_citation_infos: list[dict] = []
+        session_saved: bool | None   = None
+        warnings: list[str]          = []
 
         while True:
             event = await queue.get()
@@ -239,6 +241,7 @@ async def query_stream(
                 # ── Auto-save session (uniquement si authentifié) ──────────────
                 saved_session_id: str | None = body.session_id
                 if user is not None:
+                    session_saved = False
                     try:
                         repo = ConversationRepository(db_session)
                         if saved_session_id:
@@ -273,8 +276,12 @@ async def query_stream(
                                 usage                 = usage_summary,
                             )
                         await db_session.commit()
+                        session_saved = True
                     except Exception as exc:
                         logger.warning("Auto-save session échoué : {}", exc)
+                        warnings.append(
+                            "La réponse a été générée mais la session n'a pas pu être enregistrée."
+                        )
                 # ───────────────────────────────────────────────────────────────
                 # Applique les hyperliens [[N]](url) sur la réponse finale
                 url_map = {c.source: c.pdf_url for c in sources if c.pdf_url}
@@ -301,6 +308,8 @@ async def query_stream(
                     conversation_title    = title,
                     question_id           = question_id,
                     session_id            = saved_session_id,
+                    session_saved         = session_saved,
+                    warnings              = warnings,
                     usage                 = usage_summary,
                 )
                 yield f"data: {done_evt.model_dump_json()}\n\n"
