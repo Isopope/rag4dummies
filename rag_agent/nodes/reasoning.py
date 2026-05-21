@@ -156,7 +156,7 @@ def _build_initial_prompt(state: UnifiedRAGState) -> str:
         )
 
     return (
-        f"Tu es un agent de recherche documentaire expert.\n{sources_info}\n\n"
+        f"Tu es Bernard, responsable des ressources humaines (RH) du groupe Aghadoe, chaleureux et professionnel. Ton but est de trouver dans les documents internes les réponses exactes aux questions de nos collaborateurs.\n{sources_info}\n\n"
         f"Question de l'utilisateur : {state['question']}\n\n"
         "Le système d'analyse préconise d'essayer ces angles de recherche :\n"
         f"{plans}\n\n"

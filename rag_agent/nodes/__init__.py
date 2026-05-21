@@ -4,6 +4,7 @@ from .reasoning import agent_reason, agent_action, consolidate_chunks, seed_retr
 from .compression import compress_context
 from .reranking import rerank
 from .generation import generate, generate_post
+from .conversational import generate_conversational
 
 __all__ = [
     "analyze_and_plan",
@@ -17,4 +18,6 @@ __all__ = [
     "rerank",
     "generate",
     "generate_post",
+    "generate_conversational",
 ]
+

@@ -32,6 +32,7 @@ def build_unified_graph(config, weaviate_store):
     from .nodes.reasoning import agent_reason, agent_action, consolidate_chunks, seed_retrieval, route_agent, route_after_action
     from .nodes.compression import compress_context
     from .nodes.generation import generate, generate_post
+    from .nodes.conversational import generate_conversational
 
     llm_call = make_llm_caller(
         config.llm_model,
@@ -42,7 +43,7 @@ def build_unified_graph(config, weaviate_store):
         },
         api_base=config.api_base,
     )
-    embedder = make_embedder(config.embedding_model, config.llm_timeout, api_key=config.openai_key, api_base=config.api_base)
+    embedder = make_embedder(config.embedding_model, timeout=config.llm_timeout, api_key=config.openai_key, api_base=config.api_base)
     query_tool = QueryTool(weaviate_store, embedder)
 
     # Closure : max_agent_iter injecté dans route_agent via state
@@ -56,6 +57,12 @@ def build_unified_graph(config, weaviate_store):
     def _route_after_action(state):
         return route_after_action(state, rag_config=config)
 
+    def route_planning(state) -> str:
+        qt = state.get("query_type", "search")
+        if qt == "search":
+            return "seed_retrieval"
+        return "generate_conversational"
+
     # Nodes avec injection via partial
     _analyze    = partial(analyze_and_plan,    llm_call=llm_call,     rag_config=config)
     _seed       = partial(seed_retrieval,      query_tool=query_tool, rag_config=config)
@@ -65,6 +72,7 @@ def build_unified_graph(config, weaviate_store):
     _consolidate= partial(consolidate_chunks,  query_tool=query_tool, rag_config=config)
     _generate   = partial(generate,      llm_call=llm_call, rag_config=config)
     _post       = partial(generate_post, llm_call=llm_call, rag_config=config)
+    _conversational = partial(generate_conversational, llm_call=llm_call, rag_config=config)
 
     builder = StateGraph(UnifiedRAGState)
     builder.add_node("analyze_and_plan",   _analyze)
@@ -75,17 +83,26 @@ def build_unified_graph(config, weaviate_store):
     builder.add_node("consolidate",        _consolidate)
     builder.add_node("generate",       _generate)
     builder.add_node("generate_post",  _post)
+    builder.add_node("generate_conversational", _conversational)
 
     # Edges fixes
     builder.add_edge(START,                "analyze_and_plan")
-    builder.add_edge("analyze_and_plan",   "seed_retrieval")
     builder.add_edge("seed_retrieval",     "agent_reason")
     builder.add_edge("compress_context",   "agent_reason")
     builder.add_edge("consolidate",        "generate")
     builder.add_edge("generate",       "generate_post")
+    builder.add_edge("generate_conversational", "generate_post")
     builder.add_edge("generate_post",  END)
 
     # Edges conditionnels
+    builder.add_conditional_edges(
+        "analyze_and_plan",
+        route_planning,
+        {
+            "seed_retrieval": "seed_retrieval",
+            "generate_conversational": "generate_conversational",
+        }
+    )
     builder.add_conditional_edges(
         "agent_reason",
         _route_agent,

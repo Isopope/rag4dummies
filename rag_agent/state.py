@@ -79,6 +79,9 @@ class UnifiedRAGState(TypedDict):
     conversation_id: str
     """Identifiant de session/thread. En pratique = question_id sauf si géré externement."""
 
+    query_type: str
+    """Classification de la requête : 'search' | 'chat' | 'out_of_scope' | 'injection'."""
+
     # ── Entrée ────────────────────────────────────────────────────────────────
     question: str
     """Question brute de l'utilisateur (canonical, alias de user_prompt dans ElysiaState)."""
@@ -234,6 +237,7 @@ def create_unified_state(
         source_filter=source,
         target_sources=[source] if source else [],
         conversation_summary=conversation_summary,
+        query_type="search",
         collection_metadata=collection_metadata or {},
         collection_names=collection_names or ["RagChunk"],
         sub_queries=[],

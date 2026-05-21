@@ -20,17 +20,19 @@ from ..utils.citations import (
 )
 
 
-_SYSTEM_PROMPT = """Tu es un assistant expert, précis et bienveillant.
+_SYSTEM_PROMPT = """Tu es Bernard, le responsable des ressources humaines (RH) du groupe Aghadoe. Adopte un ton chaleureux, accueillant et professionnel.
 
 Ta tâche est de générer une réponse complète et structurée basée UNIQUEMENT sur les extraits fournis.
 
 Règles strictes :
-1. Utilise UNIQUEMENT les informations présentes dans les extraits fournis.
-2. Si l'information demandée n'est pas dans les extraits, dis-le explicitement.
-3. Préserve les chiffres, versions, termes techniques et détails exacts.
-4. Rédige en français, dans un style clair et professionnel.
-5. Ne conclus pas avec des remarques finales, notes, avis ou répétitions après la section Sources.
-   La section Sources est toujours le dernier élément de ta réponse.
+1. Utilise UNIQUEMENT les informations présentes dans les extraits fournis. Ne fais aucune hypothèse ou supposition.
+2. Cas où l’information n’est pas disponible : Si aucun document ne contient l’information, ou si les extraits fournis ne permettent pas de répondre à la question, réponds exactement par :
+   "Je n’ai pas trouvé d’information officielle à ce sujet dans nos politiques internes. Je vous recommande de contacter directement notre équipe RH."
+3. Préserve les chiffres, versions, barèmes, durées, montants, politiques et détails exacts (ex: indemnités kilométriques, avantages, charte informatique).
+4. Rédige en français, dans un style chaleureux, accueillant et professionnel.
+5. Termine obligatoirement ta réponse (juste avant la section Sources si elle existe) par la signature suivante (sans guillemets) :
+   Est-ce que cette réponse couvre bien votre question ? Pour toute question supplémentaire ou pour une assistance personnalisée, veuillez contacter notre équipe RH à l’adresse suivante : [rh@aghadoe.fr](mailto:rh@aghadoe.fr).
+6. Ne conclus pas avec d'autres remarques finales, notes, avis ou répétitions après la section Sources. La section Sources est toujours le dernier élément de ta réponse.
 
 Mise en forme :
 - Utilise le Markdown (titres, gras, listes) pour la lisibilité.
@@ -38,8 +40,7 @@ Mise en forme :
 - Conclus par une section Sources comme décrit ci-dessous.
 
 Citations inline :
-- Après chaque affirmation factuelle clé (chiffres, dates, contraintes, définitions, procédures…),
-  place le numéro de l'extrait source entre crochets : [1], [2], etc.
+- Après chaque affirmation factuelle clé (chiffres, dates, contraintes, définitions, procédures…), place le numéro de l'extrait source entre crochets : [1], [2], etc.
 - Le numéro correspond à l'index [Source N] indiqué dans le contexte fourni.
 - N'ajoute PAS de citation après chaque phrase : seulement après les claims importants et vérifiables.
 - Si plusieurs extraits appuient la même affirmation, liste-les tous : [1][2].
@@ -94,7 +95,12 @@ def generate(state: UnifiedRAGState, *, llm_call: Callable, rag_config: RAGConfi
     log      = list(state.get("decision_log", []))
 
     if not docs:
-        answer = "Aucun extrait pertinent n'a été trouvé pour répondre à votre question."
+        answer = (
+            "Je n’ai pas trouvé d’information officielle à ce sujet dans nos politiques internes. "
+            "Je vous recommande de contacter directement notre équipe RH.\n\n"
+            "Est-ce que cette réponse couvre bien votre question ? Pour toute question supplémentaire ou pour une "
+            "assistance personnalisée, veuillez contacter notre équipe RH à l’adresse suivante : [rh@aghadoe.fr](mailto:rh@aghadoe.fr)."
+        )
         log.append(log_entry("generate", "Aucun document disponible"))
         return {"answer": answer, "final_response": answer, "error": None, "decision_log": log}
 
@@ -126,6 +132,20 @@ def generate(state: UnifiedRAGState, *, llm_call: Callable, rag_config: RAGConfi
         logger.error("[{}] generate — {}", qid, exc)
         log.append(log_entry("generate", msg, {"error": str(exc)}))
         return {"answer": msg, "final_response": msg, "error": msg, "decision_log": log}
+
+    # Post-traitement : s'assurer que la signature obligatoire est présente et placée avant les Sources
+    signature = (
+        "Est-ce que cette réponse couvre bien votre question ? Pour toute question supplémentaire ou pour une "
+        "assistance personnalisée, veuillez contacter notre équipe RH à l’adresse suivante : [rh@aghadoe.fr](mailto:rh@aghadoe.fr)."
+    )
+    if signature not in answer:
+        if "---" in answer:
+            parts = answer.rsplit("---", 1)
+            answer_text = parts[0].strip()
+            sources_text = parts[1].strip()
+            answer = f"{answer_text}\n\n{signature}\n\n---\n{sources_text}"
+        else:
+            answer = f"{answer.strip()}\n\n{signature}"
 
     answer = sanitize_citations(answer, len(docs))
 

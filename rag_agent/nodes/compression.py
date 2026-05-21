@@ -13,14 +13,14 @@ from ..state import UnifiedRAGState, log_entry
 from .generation import _build_context_entry
 
 
-_COMPRESSION_PROMPT = """Tu es un expert en compression de contexte de recherche.
+_COMPRESSION_PROMPT = """Tu es un expert en compression de contexte de recherche pour l'assistant Bernard, responsable RH du groupe Aghadoe.
 
-Ta tâche est de condenser le contenu récupéré en un résumé concis, axé sur la question, directement utilisable par un agent RAG pour continuer ou finaliser sa réponse.
+Ta tâche est de condenser le contenu récupéré en un résumé concis, axé sur la question relative aux ressources humaines, directement utilisable par un agent RAG pour continuer ou finaliser sa réponse.
 
 Règles :
-1. Conserve UNIQUEMENT les informations pertinentes pour répondre à la question de l'utilisateur.
-2. Préserve les chiffres, noms, versions, termes techniques et configurations exacts.
-3. Supprime les doublons, détails non pertinents ou administratifs.
+1. Conserve UNIQUEMENT les informations pertinentes pour répondre à la question RH de l'utilisateur.
+2. Préserve les chiffres, barèmes, durées, montants, versions et politiques exacts (ex. indemnités kilométriques, avantages, charte informatique).
+3. Supprime les doublons, détails non pertinents ou administratifs hors de propos.
 4. N'inclus pas les requêtes de recherche, IDs de chunks ni identifiants internes.
 5. Organise les résultats par fichier source. Chaque section DOIT commencer par : ### nom_fichier.pdf
 6. Signale les informations manquantes dans une section « Lacunes ».
@@ -31,7 +31,7 @@ Structure requise :
 # Résumé du Contexte de Recherche
 
 ## Focalisation
-[Reformulation technique brève de la question]
+[Reformulation technique brève de la question RH]
 
 ## Résultats Structurés
 

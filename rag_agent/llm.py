@@ -15,7 +15,7 @@ import json
 import os
 import re
 import threading
-from typing import Any, Callable, Optional
+from typing import Any, Callable, Literal, Optional
 from loguru import logger
 from pydantic import BaseModel, Field, field_validator
 
@@ -170,6 +170,10 @@ def parse_json_llm(text: str) -> object:
 class PlanningOutput(BaseModel):
     """Sortie structurée du nœud analyze_and_plan."""
 
+    query_type: Literal["search", "chat", "out_of_scope", "injection"] = Field(
+        default="search",
+        description="Classification de la requête : 'search' | 'chat' | 'out_of_scope' | 'injection'",
+    )
     targets: list[str] = Field(
         default_factory=list,
         description="Noms de fichiers explicitement mentionnés et pertinents pour la question",
@@ -179,6 +183,7 @@ class PlanningOutput(BaseModel):
         description="Courte explication de la décision de planification",
     )
     sub_queries: list[str] = Field(
+        default_factory=list,
         description="1 à 3 sous-requêtes de récupération optimisées",
     )
     confidence: float = Field(
@@ -191,8 +196,6 @@ class PlanningOutput(BaseModel):
     @field_validator("sub_queries")
     @classmethod
     def at_least_one_query(cls, v: list[str]) -> list[str]:
-        if not v:
-            raise ValueError("sub_queries doit contenir au moins une requête")
         return v[:3]  # max 3 sous-requêtes
 
     @field_validator("targets")
