@@ -22,6 +22,7 @@ class RAGConfig:
     embedding_model: str = "text-embedding-3-small"
     max_tokens: int = 4000
     llm_timeout: float = 30.0
+    api_base: Optional[str] = None
 
     # ── Reranking ─────────────────────────────────────────────────────────────
     cohere_key: Optional[str] = None
@@ -77,6 +78,7 @@ class RAGConfig:
             debug=os.getenv("DEBUG", "false").lower() == "true",
             weaviate_host=os.getenv("WEAVIATE_HOST", "localhost"),
             weaviate_port=int(os.getenv("WEAVIATE_PORT", "8080")),
+            api_base=os.getenv("LITELLM_API_BASE") or os.getenv("OPENAI_API_BASE") or None,
         )
 
     def validate(self) -> None:
@@ -84,17 +86,17 @@ class RAGConfig:
         llm_provider = self._detect_llm_provider(self.llm_model)
         embedding_provider = self._detect_embedding_provider(self.embedding_model)
 
-        if llm_provider == "openai" and not self.openai_key:
+        if llm_provider == "openai" and not self.openai_key and not self.api_base:
             raise ValueError(
                 "OPENAI_API_KEY est requis pour le modèle LLM configuré. "
                 "Définissez la variable d'environnement ou passez openai_key au constructeur."
             )
-        if llm_provider == "anthropic" and not self.anthropic_key:
+        if llm_provider == "anthropic" and not self.anthropic_key and not self.api_base:
             raise ValueError(
                 "ANTHROPIC_API_KEY est requis pour un modèle Claude/Anthropic. "
                 "Définissez la variable d'environnement ou passez anthropic_key au constructeur."
             )
-        if embedding_provider == "openai" and not self.openai_key:
+        if embedding_provider == "openai" and not self.openai_key and not self.api_base:
             raise ValueError(
                 "OPENAI_API_KEY est requis pour le modèle d'embedding configuré."
             )
@@ -151,4 +153,5 @@ class RAGConfig:
             "tree_mode": self.tree_mode,
             "use_cohere_rerank": self.use_cohere_rerank,
             "enable_compression": self.enable_compression,
+            "api_base": self.api_base,
         }

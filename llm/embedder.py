@@ -137,19 +137,25 @@ class EmbeddingModel:
         
         return all_vectors
 
-def make_embedder(client: Optional[Any], model: str, timeout: float = 60.0) -> Callable[[str], list[float]]:
+def make_embedder(
+    client: Optional[Any] = None,
+    model: str = "",
+    timeout: float = 60.0,
+    api_key: Optional[str] = None,
+    api_base: Optional[str] = None,
+) -> Callable[[str], list[float]]:
     """
     Backward compatible factory function.
     Returns a function that embeds a single search query.
     """
-    api_key  = getattr(client, "api_key", None) if client else None
+    resolved_api_key  = api_key or (getattr(client, "api_key", None) if client else None)
     _base    = getattr(client, "base_url", None) if client else None
-    api_base = str(_base) if _base is not None else None
+    resolved_api_base = api_base or (str(_base) if _base is not None else None)
 
     model_instance = EmbeddingModel(
         model=model,
-        api_key=api_key,
-        api_base=api_base,
+        api_key=resolved_api_key,
+        api_base=resolved_api_base,
         timeout=timeout
     )
     

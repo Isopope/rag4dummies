@@ -22,19 +22,29 @@ from pydantic import BaseModel, Field, field_validator
 # ── Helpers timeout ────────────────────────────────────────────────────────────
 
 def _detect_llm_provider(model: str) -> str:
-    normalized = (model or "").strip().lower()
-    if normalized.startswith(("claude", "anthropic/")):
-        return "anthropic"
-    if normalized.startswith(("gpt-", "o1", "o3", "openai/")):
+    m = (model or "").strip().lower()
+    if not m:
         return "openai"
-    return "other"
+    if m.startswith(("claude", "anthropic/")):
+        return "anthropic"
+    if m.startswith(("gpt-", "o1", "o3", "openai/")):
+        return "openai"
+    if m.startswith("mistral/"):
+        return "mistral"
+    if m.startswith(("gemini", "vertex/", "google/")):
+        return "google"
+    if m.startswith("ollama/"):
+        return "ollama"
+    if "/" in m:
+        return m.split("/")[0]
+    return "unknown"
 
 
 def make_llm_caller(
-    client,
     model: str,
     timeout: float,
     provider_api_keys: Optional[dict[str, Optional[str]]] = None,
+    api_base: Optional[str] = None,
 ) -> Callable:
     """Retourne une fonction d'appel LLM via LiteLLM avec timeout."""
     key_map = provider_api_keys or {}
@@ -44,33 +54,15 @@ def make_llm_caller(
         from llm.factory import get_llm_completion
 
         # Résolution explicite des credentials provider.
-        # Si une clé dédiée est fournie (ex: ANTHROPIC_API_KEY), on la passe
-        # explicitement à LiteLLM pour éviter une dépendance implicite à l'env.
-        if llm_provider == "openai":
-            api_key = (getattr(client, "api_key", None) if client else None) or key_map.get("openai")
-        elif llm_provider == "anthropic":
-            api_key = key_map.get("anthropic")
-        else:
-            api_key = None
+        api_key = key_map.get(llm_provider) or key_map.get("openai") or None
 
-        env_key_name = "OPENAI_API_KEY" if llm_provider == "openai" else "ANTHROPIC_API_KEY" if llm_provider == "anthropic" else None
-        if env_key_name and not api_key and not os.getenv(env_key_name):
-            raise ValueError(f"{env_key_name} est requis pour appeler le modèle '{model}'.")
-
-        api_base = None
-        if llm_provider == "openai":
-            _base = getattr(client, "base_url", None) if client else None
-            api_base = str(_base) if _base is not None else None
-        
         # `timeout` peut être passé par l'appelant pour surcharger la valeur par défaut
         effective_timeout = kwargs.pop("timeout", timeout)
 
-        # Extraire `response_format` si nécessaire pour la compatibilité avec certains modèles (comme OpenAI)
+        # Transmettre `response_format` si nécessaire pour la compatibilité
         response_format = kwargs.pop("response_format", None)
-        
-        # Pour les modèles qui permettent `response_format`
-        if response_format and model.startswith("gpt"):
-           kwargs["response_format"] = response_format
+        if response_format:
+            kwargs["response_format"] = response_format
            
         resp = get_llm_completion(
             model=model,
@@ -85,11 +77,35 @@ def make_llm_caller(
     return _call
 
 
-def make_embedder(client, model: str, timeout: float) -> Callable:
+def make_embedder(
+    client_or_model: Any,
+    model: Optional[str] = None,
+    timeout: Optional[float] = None,
+    api_key: Optional[str] = None,
+    api_base: Optional[str] = None,
+) -> Callable:
     """Retourne une fonction d'embedding via LiteLLM."""
     from llm.embedder import make_embedder as get_embedder_factory
 
-    return get_embedder_factory(client, model, timeout)
+    # Détection de signature pour assurer la rétrocompatibilité :
+    # Si model est None et client_or_model est une chaîne (le nom du modèle),
+    # nous réordonnons les paramètres.
+    if model is None and isinstance(client_or_model, str):
+        actual_model = client_or_model
+        actual_timeout = timeout if timeout is not None else 60.0
+        actual_client = None
+    else:
+        actual_client = client_or_model
+        actual_model = model
+        actual_timeout = timeout if timeout is not None else 60.0
+
+    return get_embedder_factory(
+        client=actual_client,
+        model=actual_model,
+        timeout=actual_timeout,
+        api_key=api_key,
+        api_base=api_base,
+    )
 
 def _strip_fences(text: str) -> str:
     """Retire les balises Markdown ``` éventuellement ajoutées par le LLM."""

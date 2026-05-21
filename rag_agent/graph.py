@@ -22,7 +22,6 @@ def build_unified_graph(config, weaviate_store):
     """
     from functools import partial
 
-    from openai import OpenAI
     from langgraph.graph import END, START, StateGraph
 
     from .config import RAGConfig
@@ -34,17 +33,16 @@ def build_unified_graph(config, weaviate_store):
     from .nodes.compression import compress_context
     from .nodes.generation import generate, generate_post
 
-    client = OpenAI(api_key=config.openai_key) if config.openai_key else None
     llm_call = make_llm_caller(
-        client,
         config.llm_model,
         config.llm_timeout,
         provider_api_keys={
             "openai": config.openai_key,
             "anthropic": config.anthropic_key,
         },
+        api_base=config.api_base,
     )
-    embedder = make_embedder(client, config.embedding_model, config.llm_timeout)
+    embedder = make_embedder(config.embedding_model, config.llm_timeout, api_key=config.openai_key, api_base=config.api_base)
     query_tool = QueryTool(weaviate_store, embedder)
 
     # Closure : max_agent_iter injecté dans route_agent via state
@@ -117,7 +115,7 @@ class RAGAgent:
     def __init__(
         self,
         weaviate_store,
-        openai_key: str,
+        openai_key: Optional[str] = None,
         cohere_key: Optional[str] = None,
         anthropic_key: Optional[str] = None,
         *,
@@ -130,11 +128,12 @@ class RAGAgent:
         max_agent_iter: int = 60,
         llm_timeout: float = 30.0,
         enable_compression: bool = False,
+        api_base: Optional[str] = None,
     ) -> None:
         from .config import RAGConfig
 
         self._config = RAGConfig(
-            openai_key      = openai_key,
+            openai_key      = openai_key or "",
             anthropic_key   = anthropic_key,
             llm_model       = llm_model,
             embedding_model = embedding_model,
@@ -146,6 +145,7 @@ class RAGAgent:
             max_agent_iter  = max_agent_iter,
             llm_timeout     = llm_timeout,
             enable_compression = enable_compression,
+            api_base        = api_base,
         )
         self._store = weaviate_store
 
