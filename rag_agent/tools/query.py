@@ -95,6 +95,8 @@ def _doc_key(doc: dict[str, Any]) -> tuple[str, str]:
 
 def _doc_rank_score(doc: dict[str, Any]) -> float:
     """Retourne le score de classement le plus pertinent disponible."""
+    if "_inter_query_rrf_score" in doc:
+        return _safe_score(doc.get("_inter_query_rrf_score"))
     if "_rrf_score" in doc:
         return _safe_score(doc.get("_rrf_score"))
     return _safe_score(doc.get("_score"))
@@ -138,6 +140,64 @@ def weighted_rrf(
         }
         for key in sorted(rrf_scores, key=lambda x: rrf_scores[x], reverse=True)
     ]
+
+
+def inter_query_rrf(
+    ranked_results_by_query: list[tuple[str, list[dict[str, Any]]]],
+    *,
+    weights: Optional[list[float]] = None,
+    k: int = 60,
+) -> list[dict[str, Any]]:
+    """Fusionne plusieurs listes déjà classées, une par sous-requête.
+
+    Chaque entrée de `ranked_results_by_query` contient le texte de la sous-requête
+    et sa liste de chunks déjà fusionnée en intra-sous-requête. La fusion
+    inter-sous-requêtes travaille uniquement sur les rangs pour rester robuste aux
+    différences d'échelle entre les scores bruts Weaviate.
+    """
+    if not ranked_results_by_query:
+        return []
+
+    if weights is None:
+        weights = [1.0] * len(ranked_results_by_query)
+    if len(weights) != len(ranked_results_by_query):
+        raise ValueError(
+            "inter_query_rrf attend autant de poids que de sous-requêtes "
+            f"({len(weights)} != {len(ranked_results_by_query)})"
+        )
+
+    fused_scores: dict[tuple[str, str], float] = {}
+    best_doc: dict[tuple[str, str], dict[str, Any]] = {}
+    best_intra_scores: dict[tuple[str, str], float] = {}
+    matched_queries: dict[tuple[str, str], list[str]] = {}
+    query_ranks: dict[tuple[str, str], dict[str, int]] = {}
+
+    for (query, docs), weight in zip(ranked_results_by_query, weights):
+        for rank, doc in enumerate(docs, start=1):
+            key = _doc_key(doc)
+            fused_scores[key] = fused_scores.get(key, 0.0) + weight / (k + rank)
+            matched_queries.setdefault(key, [])
+            if query not in matched_queries[key]:
+                matched_queries[key].append(query)
+            query_ranks.setdefault(key, {})[query] = rank
+
+            intra_score = _doc_rank_score(doc)
+            if key not in best_doc or intra_score > best_intra_scores[key]:
+                best_doc[key] = doc
+                best_intra_scores[key] = intra_score
+
+    fused_docs: list[dict[str, Any]] = []
+    for key in sorted(fused_scores, key=lambda candidate: fused_scores[candidate], reverse=True):
+        doc = {**best_doc[key]}
+        doc["_intra_query_rrf_score"] = best_intra_scores[key]
+        doc["_inter_query_rrf_score"] = fused_scores[key]
+        doc["_matched_sub_queries"] = matched_queries[key]
+        doc["_subquery_rank_positions"] = query_ranks[key]
+        doc["_subquery_match_count"] = len(matched_queries[key])
+        doc["_score"] = fused_scores[key]
+        fused_docs.append(doc)
+
+    return fused_docs
 
 
 def combine_chunks(chunk_sets: list[list[dict]]) -> list[dict]:

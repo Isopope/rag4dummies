@@ -13,7 +13,7 @@ from loguru import logger
 
 from ..config import RAGConfig
 from ..state import UnifiedRAGState, log_entry, _seen_keys_contains, _seen_keys_add
-from ..tools.query import QueryTool, combine_chunks
+from ..tools.query import QueryTool, combine_chunks, inter_query_rrf
 
 # ── Schéma des outils OpenAI (constant) ───────────────────────────────────────
 
@@ -526,6 +526,7 @@ def seed_retrieval(
     seen_keys    = list(state.get("seen_keys", []))
     seen_queries = list(state.get("seen_queries", []))
     filter_      = state.get("source_filter")
+    per_query_limit = max(1, min(rag_config.top_k_retrieve, rag_config.top_k_per_subquery))
 
     def _search(query: str) -> list[dict]:
         try:
@@ -543,23 +544,36 @@ def seed_retrieval(
     with ThreadPoolExecutor(max_workers=max_w) as executor:
         futures = [(q, executor.submit(_search, q)) for q in sub_queries]
 
+    ranked_by_query: list[tuple[str, list[dict]]] = []
     new_total = 0
     for query, fut in futures:
         sig = f"::{query.lower().strip()}"
         if not any(q.lower().strip() == sig for q, _ in seen_queries):
             seen_queries.append((sig, 1.0))
         chunks = fut.result()
-        for doc in chunks:
-            k = (doc.get("source", ""), int(doc.get("chunk_index", -1)))
-            if not _seen_keys_contains(seen_keys, k):
-                all_docs.append(doc)
-                _seen_keys_add(seen_keys, k)
-                new_total += 1
+        ranked_by_query.append((query, chunks[:per_query_limit]))
+
+    fused_docs = inter_query_rrf(ranked_by_query)[:rag_config.top_k_retrieve]
+
+    for doc in fused_docs:
+        k = (doc.get("source", ""), int(doc.get("chunk_index", -1)))
+        if not _seen_keys_contains(seen_keys, k):
+            all_docs.append(doc)
+            _seen_keys_add(seen_keys, k)
+            new_total += 1
 
     log.append(log_entry(
         "seed_retrieval",
-        f"{new_total} chunks pré-chargés depuis {len(sub_queries)} sous-requêtes",
-        {"n_queries": len(sub_queries), "n_new_docs": new_total},
+        (
+            f"{new_total} chunks pré-chargés depuis {len(sub_queries)} sous-requêtes "
+            f"(top {per_query_limit} / sous-requête, {len(fused_docs)} après fusion inter-sous-requêtes)"
+        ),
+        {
+            "n_queries": len(sub_queries),
+            "per_query_limit": per_query_limit,
+            "n_new_docs": new_total,
+            "n_fused_docs": len(fused_docs),
+        },
     ))
     return {
         "all_docs":     all_docs,

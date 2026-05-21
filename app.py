@@ -18,6 +18,7 @@ WEAVIATE_PORT   = int(os.getenv("WEAVIATE_PORT", "8080"))
 LLM_MODEL       = os.getenv("LLM_MODEL", "gpt-4.1")
 EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "text-embedding-3-small")
 TOP_K_RETRIEVE  = int(os.getenv("TOP_K_RETRIEVE", "20"))
+TOP_K_PER_SUBQUERY = int(os.getenv("TOP_K_PER_SUBQUERY", "10"))
 TOP_K_FINAL     = int(os.getenv("TOP_K_FINAL", "5"))
 HYBRID_ALPHA    = float(os.getenv("HYBRID_ALPHA", "0.5"))
 MAX_TOKENS      = int(os.getenv("MAX_TOKENS", "1000"))
@@ -88,6 +89,7 @@ def _get_agent():
         embedding_model = EMBEDDING_MODEL,
         llm_model       = LLM_MODEL,
         top_k_retrieve  = TOP_K_RETRIEVE,
+        top_k_per_subquery = TOP_K_PER_SUBQUERY,
         top_k_final     = TOP_K_FINAL,
         hybrid_alpha    = HYBRID_ALPHA,
         max_tokens      = MAX_TOKENS,

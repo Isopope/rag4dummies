@@ -74,6 +74,7 @@ def _build_agent(llm_model: str) -> "RAGAgent":
         embedding_model    = cfg.embedding_model,
         llm_model          = llm_model,
         top_k_retrieve     = cfg.top_k_retrieve,
+        top_k_per_subquery = cfg.top_k_per_subquery,
         top_k_final        = cfg.top_k_final,
         hybrid_alpha       = cfg.hybrid_alpha,
         max_tokens         = cfg.max_tokens,

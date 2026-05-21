@@ -29,6 +29,7 @@ class RAGConfig:
 
     # ── Récupération ──────────────────────────────────────────────────────────
     top_k_retrieve: int = 20
+    top_k_per_subquery: int = 10
     top_k_final: int = 5
     hybrid_alpha: float = 0.5
 
@@ -65,6 +66,7 @@ class RAGConfig:
             llm_timeout=float(os.getenv("LLM_TIMEOUT", "30.0")),
             cohere_key=os.getenv("COHERE_API_KEY") or None,
             top_k_retrieve=int(os.getenv("TOP_K_RETRIEVE", "20")),
+            top_k_per_subquery=int(os.getenv("TOP_K_PER_SUBQUERY", "10")),
             top_k_final=int(os.getenv("TOP_K_FINAL", "10")),
             hybrid_alpha=float(os.getenv("HYBRID_ALPHA", "0.5")),
             max_agent_iter=int(os.getenv("MAX_AGENT_ITER", "60")),
@@ -102,6 +104,10 @@ class RAGConfig:
             )
         if not 0.0 <= self.hybrid_alpha <= 1.0:
             raise ValueError(f"hybrid_alpha doit être entre 0 et 1, reçu : {self.hybrid_alpha}")
+        if self.top_k_per_subquery < 1:
+            raise ValueError(
+                f"top_k_per_subquery doit être ≥ 1, reçu : {self.top_k_per_subquery}"
+            )
         if self.max_agent_iter < 1:
             raise ValueError(f"max_agent_iter doit être ≥ 1, reçu : {self.max_agent_iter}")
 
@@ -147,6 +153,7 @@ class RAGConfig:
             "max_tokens": self.max_tokens,
             "llm_timeout": self.llm_timeout,
             "top_k_retrieve": self.top_k_retrieve,
+            "top_k_per_subquery": self.top_k_per_subquery,
             "hybrid_alpha": self.hybrid_alpha,
             "max_agent_iter": self.max_agent_iter,
             "token_threshold": self.token_threshold,
