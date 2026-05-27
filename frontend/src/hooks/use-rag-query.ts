@@ -457,10 +457,21 @@ export function useRagQuery() {
           citationSources[idx + 1] = src;
         });
 
+        // Hyperlink citations in m.content on the fly!
+        let contentText = m.content;
+        sources.forEach((src, idx) => {
+          const n = idx + 1;
+          if (src.url) {
+            const escapedUrl = src.url.replace(/\$/g, '$$$$');
+            const regex = new RegExp(`\\[${n}\\](?!\\]\\()`, 'g');
+            contentText = contentText.replace(regex, `[[${n}]](${escapedUrl})`);
+          }
+        });
+
         restored.push({
           id: m.id,
           role: 'assistant',
-          contents: [{ type: 'text', text: m.content }],
+          contents: [{ type: 'text', text: contentText }],
           timestamp: new Date(m.created_at),
           lifecycleStatus: 'completed',
           sources: sources.length ? sources : undefined,

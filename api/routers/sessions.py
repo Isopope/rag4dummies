@@ -67,7 +67,7 @@ def _conv_to_item(conv) -> SessionItem:
     )
 
 
-def _conv_to_detail(conv) -> SessionDetail:
+def _conv_to_detail(conv, doc_store=None) -> SessionDetail:
     """Mappe une Conversation SQLAlchemy vers SessionDetail (vue complète)."""
     messages = []
     for m in conv.messages:
@@ -80,12 +80,22 @@ def _conv_to_detail(conv) -> SessionDetail:
                 usage = TokenUsageSummary(**raw_usage)
         except Exception:
             pass
+
+        sources = _load_sources(m.sources_json)
+        if doc_store is not None and sources:
+            try:
+                from .query import _add_pdf_urls
+                sources = _add_pdf_urls(sources, doc_store)
+            except Exception as exc:
+                from loguru import logger
+                logger.warning("Erreur lors de la re-signature des URLs PDF : {}", exc)
+
         messages.append(
             SessionMessageItem(
                 id=str(m.id),
                 role=m.role,
                 content=m.content,
-                sources=_load_sources(m.sources_json),
+                sources=sources,
                 follow_up_suggestions=meta.get("follow_up_suggestions", []),
                 usage=usage,
                 created_at=m.created_at.isoformat(),
@@ -144,7 +154,13 @@ async def get_session(
     if conv.user_id != str(user.id):
         raise HTTPException(status_code=403, detail="Accès refusé")
 
-    return _conv_to_detail(conv)
+    from ..deps import get_document_store
+    try:
+        doc_store = get_document_store()
+    except Exception:
+        doc_store = None
+
+    return _conv_to_detail(conv, doc_store)
 
 
 # ── DELETE /sessions/{session_id} ─────────────────────────────────────────────
