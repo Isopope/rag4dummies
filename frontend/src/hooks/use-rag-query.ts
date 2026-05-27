@@ -450,6 +450,13 @@ export function useRagQuery() {
           pageIdx: c.page_idx,
           kind: c.kind,
         }));
+
+        // Reconstruct citationSources mapping from sources
+        const citationSources: Record<number, MessageSource> = {};
+        sources.forEach((src, idx) => {
+          citationSources[idx + 1] = src;
+        });
+
         restored.push({
           id: m.id,
           role: 'assistant',
@@ -457,6 +464,7 @@ export function useRagQuery() {
           timestamp: new Date(m.created_at),
           lifecycleStatus: 'completed',
           sources: sources.length ? sources : undefined,
+          citationSources: sources.length ? citationSources : undefined,
           followUpSuggestions: m.follow_up_suggestions.length ? m.follow_up_suggestions : undefined,
           feedbackContext: previousUser
             ? {
