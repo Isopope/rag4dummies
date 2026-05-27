@@ -33,6 +33,8 @@ async def get_job_status(
     from worker.app import celery_app
     celery_result = celery_app.AsyncResult(task_id)
     celery_state  = celery_result.state  # PENDING | STARTED | SUCCESS | FAILURE | RETRY
+    celery_payload = celery_result.result if isinstance(celery_result.result, dict) else {}
+    usage_payload = celery_payload.get("usage") if isinstance(celery_payload, dict) else None
 
     # ── 2. Statut DB (persistant) ──────────────────────────────────────────────
     from db.repositories.document import DocumentRepository
@@ -51,6 +53,7 @@ async def get_job_status(
             task_id      = task_id,
             celery_state = celery_state,
             status       = "unknown",
+            usage        = usage_payload,
         )
 
     # ── 3. URL présignée (uniquement si indexé) ────────────────────────────────
@@ -72,4 +75,5 @@ async def get_job_status(
         chunk_count  = doc.chunk_count,
         pdf_url      = pdf_url,
         error        = doc.error_message,
+        usage        = usage_payload,
     )

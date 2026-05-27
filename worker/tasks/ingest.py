@@ -38,6 +38,7 @@ from celery.exceptions import SoftTimeLimitExceeded
 from celery.utils.log import get_task_logger
 from loguru import logger
 
+from llm.usage import track_usage
 from worker.asyncio_runner import run_async
 from worker.app import celery_app
 from worker.queues import INGEST_QUEUE, RagCeleryPriority
@@ -180,24 +181,32 @@ def ingest_pdf_task(
 
         # 4. Ingestion
         from ingestor import ingest_document as _ingest_document
-        n = _ingest_document(
-            file_path         = tmp_path,
-            weaviate_store    = store,
-            api_key           = cfg.openai_key,
-            embedding_model   = cfg.embedding_model,
-            chunking_strategy = strategy,
-            parser            = parser if parser != "simple" else "docling",
-            force_simple      = (parser == "simple"),
-            source_override   = object_key,
-            entity            = entity,
-            validity_date     = validity_date,
-        )
+        with track_usage() as usage_tracker:
+            n = _ingest_document(
+                file_path         = tmp_path,
+                weaviate_store    = store,
+                api_key           = cfg.openai_key,
+                embedding_model   = cfg.embedding_model,
+                chunking_strategy = strategy,
+                parser            = parser if parser != "simple" else "docling",
+                force_simple      = (parser == "simple"),
+                source_override   = object_key,
+                entity            = entity,
+                validity_date     = validity_date,
+            )
+        usage = usage_tracker.snapshot()
 
         # 5. Marquer INDEXED en DB
         _db_mark_indexed(object_key, n)
-        _task_logger.info("Ingestion OK | task=%s object_key=%s chunks=%d", self.request.id, object_key, n)
+        _task_logger.info(
+            "Ingestion OK | task=%s object_key=%s chunks=%d embedding_cost_usd=%.8f",
+            self.request.id,
+            object_key,
+            n,
+            float(usage.get("embeddings", {}).get("cost_usd", 0.0) or 0.0),
+        )
 
-        return {"object_key": object_key, "chunk_count": n, "status": "indexed"}
+        return {"object_key": object_key, "chunk_count": n, "status": "indexed", "usage": usage}
 
     except SoftTimeLimitExceeded:
         msg = f"Timeout dépassé pour '{object_key}'"
@@ -264,17 +273,24 @@ def ingest_jsonl_task(
         store, cfg = _build_weaviate_store()
 
         from ingestor import ingest_jsonl as _ingest_jsonl
-        n = _ingest_jsonl(
-            jsonl_path      = tmp_path,
-            weaviate_store  = store,
-            api_key         = cfg.openai_key,
-            embedding_model = cfg.embedding_model,
-            source_override = source_override,
-        )
+        with track_usage() as usage_tracker:
+            n = _ingest_jsonl(
+                jsonl_path      = tmp_path,
+                weaviate_store  = store,
+                api_key         = cfg.openai_key,
+                embedding_model = cfg.embedding_model,
+                source_override = source_override,
+            )
+        usage = usage_tracker.snapshot()
 
         _db_mark_indexed(object_key, n)
-        _task_logger.info("Ingestion JSONL OK | task=%s chunks=%d", self.request.id, n)
-        return {"object_key": object_key, "chunk_count": n, "status": "indexed"}
+        _task_logger.info(
+            "Ingestion JSONL OK | task=%s chunks=%d embedding_cost_usd=%.8f",
+            self.request.id,
+            n,
+            float(usage.get("embeddings", {}).get("cost_usd", 0.0) or 0.0),
+        )
+        return {"object_key": object_key, "chunk_count": n, "status": "indexed", "usage": usage}
 
     except SoftTimeLimitExceeded:
         msg = f"Timeout dépassé pour '{object_key}'"

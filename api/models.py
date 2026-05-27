@@ -64,6 +64,7 @@ class TokenUsageBucket(BaseModel):
     output_tokens: int = 0
     total_tokens: int = 0
     call_count: int = 0
+    cost_usd: float = 0.0
 
 
 class TokenUsageCall(BaseModel):
@@ -72,6 +73,9 @@ class TokenUsageCall(BaseModel):
     input_tokens: int = 0
     output_tokens: int = 0
     total_tokens: int = 0
+    input_cost_per_1m_tokens: float = 0.0
+    output_cost_per_1m_tokens: float = 0.0
+    cost_usd: float = 0.0
     raw_usage: dict[str, Any] = Field(default_factory=dict)
 
 
@@ -141,6 +145,10 @@ class JobStatusResponse(BaseModel):
     chunk_count: int  = 0
     pdf_url: Optional[str]  = None
     error: Optional[str]    = None
+    usage: Optional[TokenUsageSummary] = Field(
+        None,
+        description="Consommation LLM/embedding déclarée par la tâche Celery, incluant le coût estimé.",
+    )
 
 
 class IngestResponse(BaseModel):

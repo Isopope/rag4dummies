@@ -56,6 +56,7 @@ export interface TokenUsageBucket {
   output_tokens: number;
   total_tokens: number;
   call_count: number;
+  cost_usd: number;
 }
 
 export interface TokenUsageCall {
@@ -64,6 +65,9 @@ export interface TokenUsageCall {
   input_tokens: number;
   output_tokens: number;
   total_tokens: number;
+  input_cost_per_1m_tokens: number;
+  output_cost_per_1m_tokens: number;
+  cost_usd: number;
   raw_usage: Record<string, unknown>;
 }
 
@@ -132,6 +136,7 @@ export interface JobStatusResponse {
   chunk_count: number;
   pdf_url?: string;
   error?: string;
+  usage?: TokenUsageSummary;
 }
 
 export interface SourceItem {
