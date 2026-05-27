@@ -137,7 +137,7 @@ class RAGAgent:
         anthropic_key: Optional[str] = None,
         *,
         embedding_model: str = "text-embedding-3-small",
-        llm_model: str = "gpt-4.1",
+        llm_model: str = "gpt-4.1-mini",
         top_k_retrieve: int = 20,
         top_k_per_subquery: int = 10,
         top_k_final: int = 5,

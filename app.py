@@ -15,7 +15,7 @@ load_dotenv()
 # ── Configuration ──────────────────────────────────────────────────────────────
 WEAVIATE_HOST   = os.getenv("WEAVIATE_HOST", "localhost")
 WEAVIATE_PORT   = int(os.getenv("WEAVIATE_PORT", "8080"))
-LLM_MODEL       = os.getenv("LLM_MODEL", "gpt-4.1")
+LLM_MODEL       = os.getenv("LLM_MODEL", "gpt-4.1-mini")
 EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "text-embedding-3-small")
 TOP_K_RETRIEVE  = int(os.getenv("TOP_K_RETRIEVE", "20"))
 TOP_K_PER_SUBQUERY = int(os.getenv("TOP_K_PER_SUBQUERY", "10"))

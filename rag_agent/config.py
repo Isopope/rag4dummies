@@ -18,7 +18,7 @@ class RAGConfig:
     # ── LLM ───────────────────────────────────────────────────────────────────
     openai_key: str = ""
     anthropic_key: Optional[str] = None
-    llm_model: str = "gpt-4.1"
+    llm_model: str = "gpt-4.1-mini"
     embedding_model: str = "text-embedding-3-small"
     max_tokens: int = 4000
     llm_timeout: float = 30.0
@@ -60,7 +60,7 @@ class RAGConfig:
         return cls(
             openai_key=os.getenv("OPENAI_API_KEY", ""),
             anthropic_key=os.getenv("ANTHROPIC_API_KEY") or None,
-            llm_model=os.getenv("LLM_MODEL", "gpt-4.1"),
+            llm_model=os.getenv("LLM_MODEL", "gpt-4.1-mini"),
             embedding_model=os.getenv("EMBEDDING_MODEL", "text-embedding-3-small"),
             max_tokens=int(os.getenv("MAX_TOKENS", "4000")),
             llm_timeout=float(os.getenv("LLM_TIMEOUT", "30.0")),

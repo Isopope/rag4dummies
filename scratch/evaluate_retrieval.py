@@ -46,17 +46,17 @@ TEST_QUESTIONS = [
     {
         "id": "Q1",
         "category": "Simple Lookup",
-        "question": "Quelle est la politique de remboursement des frais kilométriques chez Aghadoe ?"
+        "question": "Combien de jours ouvrés de congés payés un salarié acquiert-il par mois travaillé chez Aghadoe ?"
     },
     {
         "id": "Q2",
         "category": "Multi-aspect / Comparison",
-        "question": "Quelles sont les différences dans les avantages sociaux d'Aghadoe entre les contrats temps plein et temps partiel ?"
+        "question": "Réponds uniquement par OUI ou NON sans aucune explication : un salarié peut-il quitter son lieu de télétravail pendant ses heures de travail ?"
     },
     {
         "id": "Q3",
         "category": "Specific detail",
-        "question": "Quel est le montant maximum de l'indemnité journalière de repas en grand déplacement ?"
+        "question": "Quel est le montant exact de l'indemnité de télétravail versée par Aghadoe à ses salariés ?"
     },
     {
         "id": "Q4",

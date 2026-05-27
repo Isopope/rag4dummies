@@ -73,7 +73,7 @@ def test_from_rag_agent_import():
 def test_rag_config_import():
     from rag_agent import RAGConfig
     config = RAGConfig(openai_key="test")
-    assert config.llm_model == "gpt-4.1"
+    assert config.llm_model == "gpt-4.1-mini"
     assert config.hybrid_alpha == 0.5
 
 
