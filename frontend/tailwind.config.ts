@@ -14,7 +14,8 @@ export default {
     },
     extend: {
       fontFamily: {
-        sans: ['Inter', 'system-ui', 'sans-serif'],
+        sans: ['DM Sans', 'system-ui', 'sans-serif'],
+        display: ['Cormorant Garamond', 'Georgia', 'serif'],
         mono: ['JetBrains Mono', 'monospace'],
       },
       colors: {
@@ -73,6 +74,12 @@ export default {
         info: {
           DEFAULT: "hsl(var(--info))",
           foreground: "hsl(var(--info-foreground))",
+        },
+        brand: {
+          navy: "hsl(var(--brand-navy))",
+          "navy-deep": "hsl(var(--brand-navy-deep))",
+          orange: "hsl(var(--brand-orange))",
+          "orange-strong": "hsl(var(--brand-orange-strong))",
         },
         ai: {
           message: "hsl(var(--ai-message))",

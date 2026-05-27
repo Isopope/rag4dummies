@@ -84,7 +84,7 @@ const ChatInput = ({
                 value={message}
                 onChange={(e) => setMessage(e.target.value)}
                 onKeyDown={handleKeyDown}
-                placeholder={isStreaming ? 'En cours de generation...' : 'Comment puis-je vous aider ?'}
+                placeholder={isStreaming ? 'En cours de génération...' : 'Comment puis-je vous aider ?'}
                 rows={1}
                 disabled={disabled}
                 autoFocus
@@ -114,7 +114,7 @@ const ChatInput = ({
                     : 'bg-primary text-primary-foreground hover:opacity-90',
                   !isStreaming && (!hasContent || disabled) && 'cursor-not-allowed opacity-30',
                 )}
-                aria-label={isStreaming ? 'Arreter la generation' : 'Envoyer le message'}
+                aria-label={isStreaming ? 'Arrêter la génération' : 'Envoyer le message'}
               >
                 {isStreaming ? (
                   <Square className="h-4 w-4" />
@@ -127,7 +127,7 @@ const ChatInput = ({
         </form>
 
         <p className="mt-2 text-center text-[10px] text-muted-foreground opacity-60">
-          Les reponses sont generees a partir de vos documents indexes.
+          Les réponses sont générées à partir de vos documents indexés.
         </p>
       </div>
     </div>

@@ -87,17 +87,17 @@ const IngestionPage = ({
     <div className="flex-1 overflow-y-auto">
       <div className="mx-auto max-w-5xl px-6 py-8">
         <div className="mb-8">
-          <h1 className="text-2xl font-bold text-foreground">Ingestion des donnees</h1>
+          <h1 className="text-2xl font-bold text-foreground">Ingestion des données</h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            Gerez vos sources de donnees et suivez l&apos;indexation de vos documents.
+            Gérez vos sources de données et suivez l&apos;indexation de vos documents.
           </p>
         </div>
 
-        <div className="mb-8 grid grid-cols-3 gap-4">
+        <div className="mb-8 grid grid-cols-1 gap-4 sm:grid-cols-3">
           {[
             { label: 'Connecteurs actifs', value: activeConnectors, total: connectors.length },
-            { label: 'Chunks indexes', value: documentStats.total_chunks.toLocaleString() },
-            { label: 'Documents indexes', value: documentStats.indexed_documents.toLocaleString() },
+            { label: 'Chunks indexés', value: documentStats.total_chunks.toLocaleString() },
+            { label: 'Documents indexés', value: documentStats.indexed_documents.toLocaleString() },
           ].map((stat, index) => (
             <div key={index} className="rounded-xl border border-border bg-card p-4">
               <p className="text-xs text-muted-foreground">{stat.label}</p>

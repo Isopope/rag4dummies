@@ -30,12 +30,12 @@ const statusIcon: Record<string, LucideIcon> = {
 };
 
 const statusLabel: Record<string, string> = {
-  indexed: 'Indexe',
+  indexed: 'Indexé',
   queued: 'En attente',
   processing: 'Traitement...',
   uploading: 'Upload...',
   error: 'Erreur',
-  degraded: 'Suivi degrade',
+  degraded: 'Suivi dégradé',
 };
 
 const statusColor: Record<string, string> = {
@@ -146,7 +146,7 @@ const FileUploadZone = ({
     <div className="space-y-4">
       <div className="grid grid-cols-2 gap-3">
         <div>
-          <label className="mb-1 block text-xs font-medium text-muted-foreground">Entite (proprietaire)</label>
+          <label className="mb-1 block text-xs font-medium text-muted-foreground">Entité (propriétaire)</label>
           <select
             value={selectedEntity}
             onChange={(e) => setSelectedEntity(e.target.value)}
@@ -176,8 +176,8 @@ const FileUploadZone = ({
         onDragOver={(e) => e.preventDefault()}
       >
         <Upload className="mx-auto mb-3 h-8 w-8 text-muted-foreground" />
-        <p className="mb-1 text-sm font-medium text-foreground">Deposez vos fichiers ici</p>
-        <p className="text-xs text-muted-foreground">PDF, DOCX, PPTX, TXT - jusqu&apos;a 100 MB</p>
+        <p className="mb-1 text-sm font-medium text-foreground">Déposez vos fichiers ici</p>
+        <p className="text-xs text-muted-foreground">PDF, DOCX, PPTX, TXT - jusqu&apos;à 100 MB</p>
         <button
           type="button"
           className="mt-4 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-opacity hover:opacity-90"
@@ -200,7 +200,7 @@ const FileUploadZone = ({
 
       {uploadingFiles.length > 0 && (
         <div className="space-y-2">
-          <h3 className="text-sm font-semibold text-foreground">Televersements en cours</h3>
+          <h3 className="text-sm font-semibold text-foreground">Téléversements en cours</h3>
           {uploadingFiles.map((file) => (
             <FileRow key={file.id} file={file} />
           ))}
@@ -211,13 +211,13 @@ const FileUploadZone = ({
         <div className="space-y-3">
           <div className="flex items-center justify-between gap-3">
             <div>
-              <h3 className="text-sm font-semibold text-foreground">Fichiers recents</h3>
+              <h3 className="text-sm font-semibold text-foreground">Fichiers récents</h3>
               <p className="text-xs text-muted-foreground">
                 {totalDocuments.toLocaleString()} document{totalDocuments > 1 ? 's' : ''} en base
               </p>
             </div>
             {isFetching && (
-              <span className="text-xs text-muted-foreground">Mise a jour...</span>
+              <span className="text-xs text-muted-foreground">Mise à jour...</span>
             )}
           </div>
 

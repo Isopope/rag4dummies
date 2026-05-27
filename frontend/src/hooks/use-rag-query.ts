@@ -362,7 +362,7 @@ export function useRagQuery() {
     const idx = msgs.findIndex((m) => m.id === assistantMsgId);
     if (idx <= 0) return;
     if (idx !== msgs.length - 1) {
-      toast.error("La regeneration n'est disponible que pour la derniere reponse.");
+      toast.error("La régénération n'est disponible que pour la dernière réponse.");
       return;
     }
     const userMsg = msgs[idx - 1];
