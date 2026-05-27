@@ -74,6 +74,23 @@ copy .env.example .env    # Windows
 OPENAI_API_KEY=sk-...
 ```
 
+Raffinements d'ingestion optionnels sur le chemin `openingestion` :
+
+```
+USE_INGEST_VISION_REFINERY=true
+USE_INGEST_CONTEXTUAL_RAG=true
+
+# optionnel
+INGEST_REFINERY_MODEL=gpt-4.1-mini
+INGEST_REFINERY_TIMEOUT=60
+INGEST_VISION_DETAIL=low
+```
+
+Notes :
+- ces flags sont désactivés par défaut pour éviter un surcoût d'ingestion implicite ;
+- `INGEST_REFINERY_MODEL` peut pointer vers un autre provider LiteLLM-compatible ;
+- si vous utilisez un endpoint compatible OpenAI, `LITELLM_API_BASE` ou `OPENAI_API_BASE` est aussi pris en charge côté ingestion.
+
 ### 5. Lancer l'application
 
 ```bash

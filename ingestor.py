@@ -9,8 +9,10 @@ Pipeline Onyx-aligned : content_vector séparé de title_vector, enrichissement 
 """
 from __future__ import annotations
 
+import os
 import shutil
 import tempfile
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
 
@@ -20,6 +22,330 @@ from rag_agent.retrieval.content_enrichment import enrich_chunk_for_embedding
 
 
 # ── embedding helper ──────────────────────────────────────────────────────────
+
+
+def _default_api_base() -> str | None:
+    return os.getenv("LITELLM_API_BASE") or os.getenv("OPENAI_API_BASE") or None
+
+
+def _env_flag(name: str, default: bool = False) -> bool:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    return raw.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _env_float(name: str, default: float) -> float:
+    raw = os.getenv(name)
+    if raw is None or not raw.strip():
+        return default
+    return float(raw)
+
+
+@dataclass(frozen=True)
+class _IngestionRefineryConfig:
+    use_vision_refinery: bool
+    use_contextual_rag: bool
+    model: str
+    api_base: str | None
+    timeout: float
+    vision_detail: str
+
+    @property
+    def enabled(self) -> bool:
+        return self.use_vision_refinery or self.use_contextual_rag
+
+
+def _load_ingestion_refinery_config() -> _IngestionRefineryConfig:
+    use_vision_refinery = _env_flag("USE_INGEST_VISION_REFINERY", False)
+    use_contextual_rag = _env_flag("USE_INGEST_CONTEXTUAL_RAG", False)
+    timeout = _env_float("LLM_TIMEOUT", 60.0)
+    vision_detail = "low"
+    if use_vision_refinery or use_contextual_rag:
+        timeout = _env_float("INGEST_REFINERY_TIMEOUT", timeout)
+        vision_detail = os.getenv("INGEST_VISION_DETAIL", "low").strip().lower()
+
+    config = _IngestionRefineryConfig(
+        use_vision_refinery=use_vision_refinery,
+        use_contextual_rag=use_contextual_rag,
+        model=os.getenv("INGEST_REFINERY_MODEL") or os.getenv("LLM_MODEL", "gpt-4.1-mini"),
+        api_base=_default_api_base(),
+        timeout=timeout,
+        vision_detail=vision_detail,
+    )
+    if config.enabled and config.timeout <= 0:
+        raise ValueError("INGEST_REFINERY_TIMEOUT doit être strictement positif.")
+    if config.use_vision_refinery and config.vision_detail not in {"low", "high", "auto"}:
+        raise ValueError(
+            "INGEST_VISION_DETAIL doit valoir 'low', 'high' ou 'auto'."
+        )
+    return config
+
+
+def _extract_message_text(response) -> str:
+    content = response.choices[0].message.content
+    if isinstance(content, str):
+        text = content.strip()
+        if text:
+            return text
+    elif isinstance(content, list):
+        parts: list[str] = []
+        for item in content:
+            if isinstance(item, str):
+                parts.append(item)
+                continue
+            if isinstance(item, dict) and item.get("type") == "text":
+                text = item.get("text")
+                if isinstance(text, str):
+                    parts.append(text)
+        text = "\n".join(part.strip() for part in parts if part and part.strip()).strip()
+        if text:
+            return text
+    raise ValueError("Le provider LLM a renvoyé une réponse vide.")
+
+
+class _OpenAICompatibleGenie:
+    def __init__(
+        self,
+        *,
+        model: str,
+        api_key: str | None,
+        api_base: str | None,
+        timeout: float,
+    ) -> None:
+        try:
+            from openai import OpenAI
+        except ImportError as exc:
+            raise ImportError(
+                "Le raffinage OpenAI nécessite le package 'openai'."
+            ) from exc
+
+        client_kwargs: dict[str, object] = {
+            "api_key": api_key,
+            "timeout": timeout,
+        }
+        if api_base:
+            client_kwargs["base_url"] = api_base
+
+        self.model = model
+        self._client = OpenAI(**client_kwargs)
+
+    def generate(self, prompt: str, max_tokens: int | None = None) -> str:
+        from llm.usage import record_completion_usage
+
+        kwargs: dict[str, object] = {}
+        if max_tokens is not None:
+            kwargs["max_tokens"] = max_tokens
+
+        response = self._client.chat.completions.create(
+            model=self.model,
+            messages=[{"role": "user", "content": prompt}],
+            **kwargs,
+        )
+        record_completion_usage(self.model, response)
+        return _extract_message_text(response)
+
+    def generate_contextual(
+        self,
+        context: str,
+        prompt: str,
+        max_tokens: int | None = None,
+    ) -> str:
+        return self.generate(context + prompt, max_tokens=max_tokens)
+
+    def generate_vision(
+        self,
+        prompt: str,
+        image_b64: str,
+        detail: str = "auto",
+        system: str = "",
+    ) -> str:
+        from llm.usage import record_completion_usage
+
+        messages: list[dict] = []
+        if system:
+            messages.append({"role": "system", "content": system})
+        messages.append(
+            {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": prompt},
+                    {
+                        "type": "image_url",
+                        "image_url": {"url": image_b64, "detail": detail},
+                    },
+                ],
+            }
+        )
+
+        response = self._client.chat.completions.create(
+            model=self.model,
+            messages=messages,
+        )
+        record_completion_usage(self.model, response)
+        return _extract_message_text(response)
+
+
+class _LiteLLMGenie:
+    def __init__(
+        self,
+        *,
+        model: str,
+        api_key: str | None,
+        api_base: str | None,
+        timeout: float,
+    ) -> None:
+        self.model = model
+        self.api_key = api_key
+        self.api_base = api_base
+        self.timeout = timeout
+
+    def generate(self, prompt: str, max_tokens: int | None = None) -> str:
+        from llm.factory import get_llm_completion
+
+        response = get_llm_completion(
+            model=self.model,
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0,
+            max_tokens=max_tokens or 1000,
+            timeout=self.timeout,
+            api_key=self.api_key,
+            api_base=self.api_base,
+        )
+        return _extract_message_text(response)
+
+    def generate_contextual(
+        self,
+        context: str,
+        prompt: str,
+        max_tokens: int | None = None,
+    ) -> str:
+        return self.generate(context + prompt, max_tokens=max_tokens)
+
+    def generate_vision(
+        self,
+        prompt: str,
+        image_b64: str,
+        detail: str = "auto",
+        system: str = "",
+    ) -> str:
+        from llm.factory import get_llm_completion
+
+        messages: list[dict] = []
+        if system:
+            messages.append({"role": "system", "content": system})
+        messages.append(
+            {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": prompt},
+                    {
+                        "type": "image_url",
+                        "image_url": {"url": image_b64, "detail": detail},
+                    },
+                ],
+            }
+        )
+        response = get_llm_completion(
+            model=self.model,
+            messages=messages,
+            temperature=0,
+            max_tokens=1000,
+            timeout=self.timeout,
+            api_key=self.api_key,
+            api_base=self.api_base,
+        )
+        return _extract_message_text(response)
+
+
+def _resolve_refinery_api_key(model: str, fallback_api_key: str) -> str | None:
+    from rag_agent.config import RAGConfig
+
+    provider = RAGConfig._detect_llm_provider(model)
+    provider_env_keys = {
+        "openai": ("OPENAI_API_KEY",),
+        "anthropic": ("ANTHROPIC_API_KEY",),
+        "mistral": ("MISTRAL_API_KEY",),
+        "google": ("GEMINI_API_KEY", "GOOGLE_API_KEY"),
+    }
+
+    for env_name in provider_env_keys.get(provider, ()):
+        value = os.getenv(env_name)
+        if value:
+            return value
+
+    if fallback_api_key:
+        return fallback_api_key
+
+    return os.getenv("OPENAI_API_KEY") or None
+
+
+def _build_refinery_genie(
+    config: _IngestionRefineryConfig,
+    *,
+    api_key: str,
+):
+    from rag_agent.config import RAGConfig
+
+    provider = RAGConfig._detect_llm_provider(config.model)
+    resolved_api_key = _resolve_refinery_api_key(config.model, api_key)
+    use_openai_client = provider == "openai" or (
+        provider == "unknown" and config.api_base is not None
+    )
+
+    if use_openai_client:
+        return _OpenAICompatibleGenie(
+            model=config.model,
+            api_key=resolved_api_key,
+            api_base=config.api_base,
+            timeout=config.timeout,
+        )
+
+    return _LiteLLMGenie(
+        model=config.model,
+        api_key=resolved_api_key,
+        api_base=config.api_base,
+        timeout=config.timeout,
+    )
+
+
+def _apply_openingestion_refineries(
+    chunks,
+    *,
+    api_key: str,
+    progress_cb: Callable[[str], None] | None = None,
+):
+    config = _load_ingestion_refinery_config()
+    if not config.enabled:
+        return chunks
+
+    _cb = progress_cb or (lambda _msg: None)
+    genie = _build_refinery_genie(config, api_key=api_key)
+
+    if config.use_vision_refinery:
+        try:
+            from openingestion.refinery.vision import VisionRefinery
+        except ImportError as exc:
+            raise RuntimeError(
+                "USE_INGEST_VISION_REFINERY nécessite openingestion.refinery.vision."
+            ) from exc
+        _cb(f"Raffinage vision des chunks via {config.model}…")
+        chunks = VisionRefinery(
+            genie=genie,
+            image_detail=config.vision_detail,
+        ).enrich(chunks)
+
+    if config.use_contextual_rag:
+        try:
+            from openingestion.refinery.contextual_rag import ContextualRagRefinery
+        except ImportError as exc:
+            raise RuntimeError(
+                "USE_INGEST_CONTEXTUAL_RAG nécessite openingestion.refinery.contextual_rag."
+            ) from exc
+        _cb(f"Raffinage contextual RAG des chunks via {config.model}…")
+        chunks = ContextualRagRefinery(genie=genie).enrich(chunks)
+
+    return chunks
 
 def _embed_texts(
     texts: list[str],
@@ -34,6 +360,7 @@ def _embed_texts(
     embedder = EmbeddingModel(
         model=model,
         api_key=api_key,
+        api_base=_default_api_base(),
     )
 
     if progress_cb:
@@ -214,6 +541,11 @@ def _ingest_with_openingestion(
             image_mode="path",
             mineru_output_dir=mineru_tmp,
         )
+        chunks = _apply_openingestion_refineries(
+            chunks,
+            api_key=api_key,
+            progress_cb=progress_cb,
+        )
     finally:
         shutil.rmtree(mineru_tmp, ignore_errors=True)
 
@@ -242,6 +574,8 @@ def _ingest_with_openingestion(
             "next_chunk":    c.next_chunk_index if c.next_chunk_index is not None else -1,
             "page_idx":      page_idx,
             "token_count":   c.token_count,
+            "doc_summary":   getattr(c, "doc_summary", "") or "",
+            "chunk_context": getattr(c, "chunk_context", "") or "",
             "html":          html,
             "captions_json": _json.dumps(captions,  ensure_ascii=False),
             "footnotes_json":_json.dumps(footnotes, ensure_ascii=False),
@@ -557,6 +891,8 @@ def ingest_jsonl(
             "next_chunk":    int(raw["next_chunk_index"]) if raw.get("next_chunk_index") is not None else -1,
             "page_idx":      page_idx,
             "token_count":   int(raw.get("token_count") or 0),
+            "doc_summary":   raw.get("doc_summary") or "",
+            "chunk_context": raw.get("chunk_context") or "",
             "html":          html,
             "captions_json": _json.dumps(captions, ensure_ascii=False),
             "footnotes_json": "[]",
