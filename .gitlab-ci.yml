@@ -1,0 +1,236 @@
+stages:
+  - test
+  - build
+  - publish
+  - deploy
+
+variables:
+  DOCKER_DRIVER: overlay2
+  DOCKER_HOST: tcp://docker:2375
+  DOCKER_TLS_CERTDIR: ""
+  DEPLOY_ENV_FILE: app.env
+
+# ── Tests ──────────────────────────────────────────────────────────────────────
+
+test-backend:
+  stage: test
+  image: python:3.11-slim
+  before_script:
+    - apt-get update -qq && apt-get install -y --no-install-recommends build-essential libgl1 > /dev/null
+    - pip install --upgrade pip -q
+    # Installe les dépendances légères pour la vérification de syntaxe
+    # (openingestion[mineru] est trop lourd pour la CI — couverture complète via image pré-buildée)
+    - pip install pydantic>=2.0 fastapi uvicorn loguru python-dotenv celery redis sqlalchemy aiosqlite alembic langchain-core -q
+  script:
+    - python -m compileall api/ worker/ rag_agent/ llm/ storage/ db/ -q
+  tags:
+    - runner
+    - python
+
+test-frontend:
+  stage: test
+  image: node:20-alpine
+  cache:
+    key: "$CI_COMMIT_REF_SLUG-node"
+    paths:
+      - frontend/node_modules/
+  before_script:
+    - cd frontend
+    - npm ci --legacy-peer-deps
+  script:
+    - npm run lint
+    - npm run test
+  tags:
+    - runner
+
+# ── Build ──────────────────────────────────────────────────────────────────────
+# Détection rapide des erreurs avant les lents builds Docker.
+# Le dist/ frontend est conservé en artefact pour inspection si besoin.
+
+build-frontend:
+  stage: build
+  image: node:20-alpine
+  cache:
+    key: "$CI_COMMIT_REF_SLUG-node"
+    paths:
+      - frontend/node_modules/
+  before_script:
+    - cd frontend
+    - npm ci --legacy-peer-deps
+  script:
+    - npm run build
+  artifacts:
+    paths:
+      - frontend/dist/
+    expire_in: 1 hour
+  tags:
+    - runner
+
+# ── Publish ────────────────────────────────────────────────────────────────────
+# Les images sont exportées en tar.gz (artifacts) et transférées par SCP
+# pour contourner les problèmes éventuels de certificat du registry GitLab.
+
+publish-backend:
+  stage: publish
+  image: docker:24
+  services:
+    - name: docker:24-dind
+      alias: docker
+      command: ["--tls=false"]
+  tags:
+    - runner
+    - python
+  before_script:
+    - until docker info > /dev/null 2>&1; do echo "Waiting for Docker daemon..."; sleep 2; done
+  script:
+    - docker build -t $CI_REGISTRY_IMAGE/backend:$CI_COMMIT_SHA .
+    - docker save $CI_REGISTRY_IMAGE/backend:$CI_COMMIT_SHA | gzip > backend-image.tar.gz
+  artifacts:
+    paths:
+      - backend-image.tar.gz
+    expire_in: 1 hour
+  only:
+    - main
+
+publish-frontend:
+  stage: publish
+  image: docker:24
+  services:
+    - name: docker:24-dind
+      alias: docker
+      command: ["--tls=false"]
+  tags:
+    - runner
+  needs:
+    - build-frontend
+  before_script:
+    - until docker info > /dev/null 2>&1; do echo "Waiting for Docker daemon..."; sleep 2; done
+  script:
+    - docker build -t $CI_REGISTRY_IMAGE/frontend:$CI_COMMIT_SHA ./frontend
+    - docker save $CI_REGISTRY_IMAGE/frontend:$CI_COMMIT_SHA | gzip > frontend-image.tar.gz
+  artifacts:
+    paths:
+      - frontend-image.tar.gz
+    expire_in: 1 hour
+  only:
+    - main
+
+# ── Deploy ─────────────────────────────────────────────────────────────────────
+# Variables CI/CD à configurer dans GitLab (Settings → CI/CD → Variables) :
+#
+# DÉPLOIEMENT
+#   SSH_PRIVATE_KEY      — clé privée SSH (type File, protected)
+#   DEPLOY_HOST          — IP ou hostname du serveur
+#   DEPLOY_USER          — utilisateur SSH (ex: ubuntu, deploy)
+#   DEPLOY_PATH          — chemin absolu sur le serveur (ex: /opt/rag4dummies)
+#   PROJECT_NAME         — préfixe des containers (ex: rag4dummies)
+#   DOMAIN_NAME          — domaine public (ex: rag.aghadoe.fr)
+#   TRAEFIK_NETWORK      — nom du réseau Traefik (défaut: ingress)
+#
+# LLM / API
+#   OPENAI_API_KEY       — clé OpenAI (required)
+#   ANTHROPIC_API_KEY    — clé Anthropic (optionnel)
+#   GEMINI_API_KEY       — clé Google Gemini (optionnel)
+#   LLM_MODEL            — ex: gpt-4.1-mini
+#   EMBEDDING_MODEL      — ex: text-embedding-3-large
+#
+# AUTH
+#   JWT_SECRET_KEY       — secret JWT (générer: python -c "import secrets; print(secrets.token_hex(32))")
+#   ADMIN_EMAIL          — email admin par défaut
+#   ADMIN_PASSWORD       — mot de passe admin par défaut
+#   CORS_ORIGINS         — ex: https://rag.aghadoe.fr
+#
+# STOCKAGE
+#   MINIO_ACCESS_KEY     — utilisateur MinIO (ex: minioadmin)
+#   MINIO_SECRET_KEY     — mot de passe MinIO
+#   MINIO_BUCKET         — nom du bucket (ex: rag-documents)
+#
+# BASE DE DONNÉES (optionnel — SQLite par défaut)
+#   DATABASE_URL         — ex: postgresql+asyncpg://user:pass@host:5432/ragdb
+
+deploy:
+  stage: deploy
+  image: alpine:latest
+  environment:
+    name: production
+    url: https://${DOMAIN_NAME}
+  resource_group: production
+  tags:
+    - runner
+  needs:
+    - publish-backend
+    - publish-frontend
+  before_script:
+    - apk add --no-cache openssh-client
+    - eval $(ssh-agent -s)
+    - echo "$SSH_PRIVATE_KEY" | tr -d '\r' | ssh-add -
+    - mkdir -p ~/.ssh && chmod 700 ~/.ssh
+    - ssh-keyscan -H "$DEPLOY_HOST" >> ~/.ssh/known_hosts
+  script:
+    # Validation des variables obligatoires
+    - test -n "$DEPLOY_HOST"
+    - test -n "$DEPLOY_USER"
+    - test -n "$DEPLOY_PATH"
+    - test -n "$PROJECT_NAME"
+    - test -n "$DOMAIN_NAME"
+    - test -n "$JWT_SECRET_KEY"
+    - test -n "$OPENAI_API_KEY"
+    - test -n "$MINIO_ACCESS_KEY"
+    - test -n "$MINIO_SECRET_KEY"
+
+    # Génération du fichier app.env (secrets applicatifs injectés dans les containers)
+    - |
+      cat > "$DEPLOY_ENV_FILE" <<EOF
+      OPENAI_API_KEY=${OPENAI_API_KEY}
+      ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      GEMINI_API_KEY=${GEMINI_API_KEY:-}
+      LLM_MODEL=${LLM_MODEL:-gpt-4.1-mini}
+      EMBEDDING_MODEL=${EMBEDDING_MODEL:-text-embedding-3-large}
+      JWT_SECRET_KEY=${JWT_SECRET_KEY}
+      JWT_ALGORITHM=HS256
+      JWT_ACCESS_TOKEN_EXPIRE_MINUTES=60
+      ADMIN_EMAIL=${ADMIN_EMAIL:-admin@example.com}
+      ADMIN_PASSWORD=${ADMIN_PASSWORD:-changeme}
+      CORS_ORIGINS=${CORS_ORIGINS:-https://${DOMAIN_NAME}}
+      DATABASE_URL=${DATABASE_URL:-sqlite+aiosqlite:////app/data/rag.db}
+      MINIO_ACCESS_KEY=${MINIO_ACCESS_KEY}
+      MINIO_SECRET_KEY=${MINIO_SECRET_KEY}
+      MINIO_BUCKET=${MINIO_BUCKET:-rag-documents}
+      MINIO_PRESIGN_EXPIRES=3600
+      TOP_K_FINAL=${TOP_K_FINAL:-10}
+      HYBRID_ALPHA=${HYBRID_ALPHA:-0.5}
+      MAX_TOKENS=${MAX_TOKENS:-1000}
+      MAX_AGENT_ITER=${MAX_AGENT_ITER:-10}
+      USE_INGEST_VISION_REFINERY=${USE_INGEST_VISION_REFINERY:-false}
+      USE_INGEST_CONTEXTUAL_RAG=${USE_INGEST_CONTEXTUAL_RAG:-false}
+      INGEST_REFINERY_MODEL=${INGEST_REFINERY_MODEL:-gpt-4.1-mini}
+      CELERY_WORKER_INGEST_CONCURRENCY=${CELERY_WORKER_INGEST_CONCURRENCY:-2}
+      CELERY_WORKER_LIGHT_CONCURRENCY=${CELERY_WORKER_LIGHT_CONCURRENCY:-4}
+      CELERY_INGEST_SOFT_TIMEOUT=${CELERY_INGEST_SOFT_TIMEOUT:-1800}
+      DB_ECHO=false
+      EOF
+
+    # Transfert des fichiers sur le serveur
+    - ssh $DEPLOY_USER@$DEPLOY_HOST "mkdir -p '$DEPLOY_PATH'"
+    - scp docker-compose.prod.yml "$DEPLOY_ENV_FILE" backend-image.tar.gz frontend-image.tar.gz $DEPLOY_USER@$DEPLOY_HOST:$DEPLOY_PATH/
+
+    # Déploiement sur le serveur distant
+    - |
+      ssh $DEPLOY_USER@$DEPLOY_HOST "
+        set -eu &&
+        cd '$DEPLOY_PATH' &&
+        export CI_REGISTRY_IMAGE='$CI_REGISTRY_IMAGE' &&
+        export CI_COMMIT_SHA='$CI_COMMIT_SHA' &&
+        export PROJECT_NAME='$PROJECT_NAME' &&
+        export DOMAIN_NAME='$DOMAIN_NAME' &&
+        export TRAEFIK_NETWORK='${TRAEFIK_NETWORK:-ingress}' &&
+        export MINIO_ACCESS_KEY='${MINIO_ACCESS_KEY}' &&
+        export MINIO_SECRET_KEY='${MINIO_SECRET_KEY}' &&
+        docker network inspect '${TRAEFIK_NETWORK:-ingress}' >/dev/null 2>&1 || docker network create '${TRAEFIK_NETWORK:-ingress}' &&
+        docker load -i backend-image.tar.gz &&
+        docker load -i frontend-image.tar.gz &&
+        docker compose -f docker-compose.prod.yml up -d --remove-orphans &&
+        rm -f backend-image.tar.gz frontend-image.tar.gz
+      "
+  only:
+    - main

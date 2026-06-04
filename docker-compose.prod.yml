@@ -1,0 +1,150 @@
+services:
+
+  # ── Infrastructure ────────────────────────────────────────────────────────────
+
+  weaviate:
+    image: semitechnologies/weaviate:1.28.4
+    restart: unless-stopped
+    environment:
+      QUERY_DEFAULTS_LIMIT: 25
+      AUTHENTICATION_ANONYMOUS_ACCESS_ENABLED: "true"
+      PERSISTENCE_DATA_PATH: /var/lib/weaviate
+      DEFAULT_VECTORIZER_MODULE: none
+      ENABLE_MODULES: ""
+      CLUSTER_HOSTNAME: "node1"
+    volumes:
+      - weaviate_data:/var/lib/weaviate
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/v1/.well-known/ready"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    networks:
+      - internal
+
+  minio:
+    image: minio/minio:latest
+    restart: unless-stopped
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ACCESS_KEY}
+      MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY}
+    command: server /data --console-address ":9001"
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - internal
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - internal
+
+  # ── Application ───────────────────────────────────────────────────────────────
+
+  api:
+    image: ${CI_REGISTRY_IMAGE}/backend:${CI_COMMIT_SHA:-latest}
+    container_name: ${PROJECT_NAME}-api
+    restart: unless-stopped
+    env_file: app.env
+    # Les URLs internes Docker surchargent celles éventuellement présentes dans app.env
+    environment:
+      WEAVIATE_HOST: weaviate
+      WEAVIATE_PORT: "8080"
+      MINIO_ENDPOINT: "minio:9000"
+      MINIO_SECURE: "false"
+      CELERY_BROKER_URL: "redis://redis:6379/0"
+      CELERY_RESULT_BACKEND: "redis://redis:6379/1"
+    depends_on:
+      weaviate:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    networks:
+      - internal
+      - reverse-proxy-net
+    labels:
+      - "traefik.enable=true"
+      # Route /api/* → backend (priorité haute pour ne pas être écrasé par la route frontend)
+      - "traefik.http.routers.${PROJECT_NAME}-api.rule=Host(`${DOMAIN_NAME}`) && PathPrefix(`/api`)"
+      - "traefik.http.routers.${PROJECT_NAME}-api.priority=10"
+      # Middleware StripPrefix : /api/query → /query
+      - "traefik.http.routers.${PROJECT_NAME}-api.middlewares=${PROJECT_NAME}-strip-api"
+      - "traefik.http.middlewares.${PROJECT_NAME}-strip-api.stripprefix.prefixes=/api"
+      - "traefik.http.services.${PROJECT_NAME}-api.loadbalancer.server.port=8000"
+      # NOTE SSE (/api/query/stream) : désactivez le buffering Traefik si besoin
+      # traefik.http.middlewares.${PROJECT_NAME}-sse.headers.customResponseHeaders.X-Accel-Buffering=no
+
+  worker:
+    image: ${CI_REGISTRY_IMAGE}/backend:${CI_COMMIT_SHA:-latest}
+    container_name: ${PROJECT_NAME}-worker
+    restart: unless-stopped
+    env_file: app.env
+    environment:
+      WEAVIATE_HOST: weaviate
+      WEAVIATE_PORT: "8080"
+      MINIO_ENDPOINT: "minio:9000"
+      MINIO_SECURE: "false"
+      CELERY_BROKER_URL: "redis://redis:6379/0"
+      CELERY_RESULT_BACKEND: "redis://redis:6379/1"
+    command:
+      - /opt/venv/bin/celery
+      - "-A"
+      - worker.app
+      - worker
+      - "-l"
+      - info
+      - "-Q"
+      - "ingest,light"
+      - "-c"
+      - "2"
+    depends_on:
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    networks:
+      - internal
+
+  frontend:
+    image: ${CI_REGISTRY_IMAGE}/frontend:${CI_COMMIT_SHA:-latest}
+    container_name: ${PROJECT_NAME}-frontend
+    restart: unless-stopped
+    depends_on:
+      - api
+    networks:
+      - reverse-proxy-net
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.${PROJECT_NAME}-frontend.rule=Host(`${DOMAIN_NAME}`)"
+      - "traefik.http.services.${PROJECT_NAME}-frontend.loadbalancer.server.port=80"
+
+# ── Volumes & Networks ──────────────────────────────────────────────────────────
+
+volumes:
+  weaviate_data:
+  minio_data:
+  redis_data:
+
+networks:
+  internal:
+    driver: bridge
+  reverse-proxy-net:
+    name: ${TRAEFIK_NETWORK:-ingress}
+    external: true

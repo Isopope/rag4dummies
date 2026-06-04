@@ -1,0 +1,17 @@
+.git
+.venv
+.claude
+__pycache__
+*.pyc
+*.pyo
+.pytest_cache
+.env
+rag.db
+uploads/
+scratch/
+design-handoff/
+frontend/
+node_modules/
+"Aghadoe Design System-handoff.zip"
+settings.json
+settings.local.json
