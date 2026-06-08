@@ -140,11 +140,15 @@ def _build_initial_prompt(state: UnifiedRAGState) -> str:
 
     plans = " - " + "\n - ".join(state.get("sub_queries", [state["question"]]))
 
-    first_rule = (
-        "1. Comble les lacunes du contexte compressé ci-dessous avec de nouvelles recherches ciblées.\n"
-        if state.get("context_summary")
-        else "1. Tu DOIS utiliser 'search_documents' lors de ta PREMIÈRE action — sans exception.\n"
-    )
+    if state.get("context_summary"):
+        first_rule = "1. Comble les lacunes du contexte compressé ci-dessous avec de nouvelles recherches ciblées.\n"
+    elif state.get("all_docs"):
+        first_rule = (
+            "1. Des extraits ont déjà été récupérés pour les angles suggérés — analyse-les en premier.\n"
+            "   Lance 'search_documents' uniquement si un aspect précis de la question reste sans réponse dans ces extraits.\n"
+        )
+    else:
+        first_rule = "1. Tu DOIS utiliser 'search_documents' lors de ta PREMIÈRE action — sans exception.\n"
 
     context_injection = ""
     if state.get("context_summary"):
@@ -166,7 +170,8 @@ def _build_initial_prompt(state: UnifiedRAGState) -> str:
         "   Si la question compare plusieurs documents, appelle 'search_documents' plusieurs fois avec 'source_name' pour chaque document.\n"
         "3. Écris ton raisonnement AVANT chaque appel d'outil ou décision finale.\n"
         "4. Varie les formulations de recherche pour couvrir tous les aspects de la question.\n"
-        "5. Quand les extraits récupérés suffisent à répondre, dis 'RECHERCHE_TERMINEE'.\n"
+        "5. Réponds UNIQUEMENT à la question posée — ne cherche pas à couvrir des sujets connexes non demandés.\n"
+        "   Quand les extraits récupérés suffisent à répondre à la question, dis 'RECHERCHE_TERMINEE'.\n"
         "   IMPORTANT : Ne dis JAMAIS 'RECHERCHE_TERMINEE' si tu reçois des erreurs de la base documentaire.\n"
         "   En cas d'erreur d'un outil, essaie une autre formulation ou un autre angle — ne capitule pas.\n"
         f"6. Ne jamais inventer d'informations non présentes dans les extraits.{context_injection}"
