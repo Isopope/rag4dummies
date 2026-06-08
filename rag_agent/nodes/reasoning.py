@@ -13,7 +13,7 @@ from loguru import logger
 
 from ..config import RAGConfig
 from ..state import UnifiedRAGState, log_entry, _seen_keys_contains, _seen_keys_add
-from ..tools.query import QueryTool, combine_chunks, inter_query_rrf
+from ..tools.query import QueryTool, combine_chunks, inter_query_rrf, _doc_rank_score
 
 # ── Schéma des outils OpenAI (constant) ───────────────────────────────────────
 
@@ -486,9 +486,11 @@ def consolidate_chunks(
             pass
 
     all_chunks = combine_chunks([docs])
+    # Filtre les chunks sans contenu textuel (chunks voisins vides)
+    all_chunks = [c for c in all_chunks if (c.get("page_content") or "").strip()]
     retrieved_docs = sorted(
         all_chunks,
-        key=lambda d: d.get("_score", 0.0),
+        key=_doc_rank_score,
         reverse=True,
     )[: rag_config.top_k_final]
     log.append(log_entry(
