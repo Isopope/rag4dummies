@@ -46,8 +46,17 @@ minio>=7.2
 celery[redis]>=5.3
 redis>=5.0
 
+# numpy<2.0 DOIT être déclaré avant openingestion[mineru].
+# numpy 2.x utilise x86-v2 (AVX/SSE4.2) comme baseline absolue et refuse de charger
+# sur CPUs sans ces instructions (serveurs anciens, VMs légères).
+# numpy 1.x (baseline SSE2) est compatible avec tous les x86 et avec mineru 3.x.
+numpy>=1.24,<2.0
+
 #openingestion
 openingestion[mineru]>=0.1.5
+openingestion[sharepoint]>=0.1.5
+# markitdown : conversion Office (DOCX, PPTX, XLSX) → markdown pour le mode fallback simple
+markitdown>=0.1.0
 
 # connectors
 playwright>=1.42

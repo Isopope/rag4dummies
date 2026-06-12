@@ -77,7 +77,10 @@ def route_agent(state: UnifiedRAGState) -> str:
     iterations = state.get("agent_iterations", 0)
     config_max = state.get("_max_agent_iter", 60)  # injecté par le graphe
 
+    # Si messages est vide ET qu'il y a une erreur fatale, on consolide ce qu'on a
     if not messages:
+        if state.get("error"):
+            return "rerank_prep"
         return "agent_action"
 
     if iterations >= config_max:
@@ -388,6 +391,7 @@ def agent_action(
                 for doc in merged:
                     k = (doc.get("source", ""), int(doc.get("chunk_index", -1)))
                     if not _seen_keys_contains(seen_keys, k):
+                        doc["_origin_query"] = item["query"]
                         all_docs.append(doc)
                         _seen_keys_add(seen_keys, k)
                         new_count += 1
@@ -493,15 +497,39 @@ def consolidate_chunks(
     all_chunks = combine_chunks([docs])
     # Filtre les chunks sans contenu textuel (chunks voisins vides)
     all_chunks = [c for c in all_chunks if (c.get("page_content") or "").strip()]
-    retrieved_docs = sorted(
-        all_chunks,
-        key=_doc_rank_score,
-        reverse=True,
-    )[: rag_config.top_k_final]
+
+    # ── Normalisation par rang inter-requêtes ─────────────────────────────────
+    # seed_retrieval  → _inter_query_rrf_score (max ≈ 1/61 par sous-requête)
+    # agent_action    → wRRF Σpoids=2.3       (max ≈ 2.3/61)
+    # Les deux échelles sont incompatibles : un simple tri par _score favorise
+    # systématiquement les chunks de l'agent. On applique inter_query_rrf sur
+    # l'ensemble en groupant par requête d'origine — normalisation par rang,
+    # invariante à l'échelle absolue des scores.
+    from collections import defaultdict
+    query_groups: dict[str, list] = defaultdict(list)
+    for doc in all_chunks:
+        origins = doc.get("_matched_sub_queries")   # seed : peut matcher N sous-requêtes
+        if origins:
+            for q in origins:
+                query_groups[q].append(doc)
+        elif doc.get("_origin_query"):               # react : une requête explicite
+            query_groups[doc["_origin_query"]].append(doc)
+        else:                                         # expanded + fallback
+            query_groups["_expanded"].append(doc)
+
+    if len(query_groups) > 1:
+        ranked_by_query = [
+            (q, sorted(group, key=_doc_rank_score, reverse=True))
+            for q, group in query_groups.items()
+        ]
+        retrieved_docs = inter_query_rrf(ranked_by_query)[: rag_config.top_k_final]
+    else:
+        retrieved_docs = sorted(all_chunks, key=_doc_rank_score, reverse=True)[: rag_config.top_k_final]
+
     log.append(log_entry(
         "agent.loop_end",
-        f"{len(all_chunks)} chunks consolidés → top {len(retrieved_docs)} retenus (score desc).",
-        {"current_branch": "synthesize", "n_total": len(all_chunks), "n_final": len(retrieved_docs)},
+        f"{len(all_chunks)} chunks consolidés via {len(query_groups)} groupes-requêtes → top {len(retrieved_docs)} retenus.",
+        {"current_branch": "synthesize", "n_total": len(all_chunks), "n_groups": len(query_groups), "n_final": len(retrieved_docs)},
     ))
     return {
         "retrieved_docs":   retrieved_docs,

@@ -5,9 +5,7 @@ stages:
   - deploy
 
 variables:
-  DOCKER_DRIVER: overlay2
-  DOCKER_HOST: tcp://docker:2375
-  DOCKER_TLS_CERTDIR: ""
+  DOCKER_HOST: unix:///var/run/docker.sock
   DEPLOY_ENV_FILE: app.env
 
 # ── Tests ──────────────────────────────────────────────────────────────────────
@@ -18,7 +16,7 @@ test-backend:
   before_script:
     - apt-get update -qq && apt-get install -y --no-install-recommends build-essential libgl1 > /dev/null
     - pip install --upgrade pip -q
-    # Installe les dépendances légères pour la vérification de syntaxe
+    # Dépendances légères pour la vérification de syntaxe
     # (openingestion[mineru] est trop lourd pour la CI — couverture complète via image pré-buildée)
     - pip install pydantic>=2.0 fastapi uvicorn loguru python-dotenv celery redis sqlalchemy aiosqlite alembic langchain-core -q
   script:
@@ -67,53 +65,46 @@ build-frontend:
     - runner
 
 # ── Publish ────────────────────────────────────────────────────────────────────
-# Les images sont exportées en tar.gz (artifacts) et transférées par SCP
-# pour contourner les problèmes éventuels de certificat du registry GitLab.
+# Les images sont streamées directement vers le serveur via SSH pipe.
+# Aucun artifact GitLab → pas de limite de taille (contourne le 413).
+# Flux : docker build → docker save | gzip | ssh → gunzip | docker load
 
 publish-backend:
   stage: publish
   image: docker:24
-  services:
-    - name: docker:24-dind
-      alias: docker
-      command: ["--tls=false"]
   tags:
     - runner
     - python
   before_script:
-    - until docker info > /dev/null 2>&1; do echo "Waiting for Docker daemon..."; sleep 2; done
+    - apk add --no-cache openssh-client
+    - eval $(ssh-agent -s)
+    - echo "$SSH_PRIVATE_KEY" | tr -d '\r' | ssh-add -
+    - mkdir -p ~/.ssh && chmod 700 ~/.ssh
+    - ssh-keyscan -H "$DEPLOY_HOST" >> ~/.ssh/known_hosts
   script:
     - docker build -t $CI_REGISTRY_IMAGE/backend:$CI_COMMIT_SHA .
-    - docker save $CI_REGISTRY_IMAGE/backend:$CI_COMMIT_SHA | gzip > backend-image.tar.gz
-  artifacts:
-    paths:
-      - backend-image.tar.gz
-    expire_in: 1 hour
+    - docker save $CI_REGISTRY_IMAGE/backend:$CI_COMMIT_SHA | gzip | ssh $DEPLOY_USER@$DEPLOY_HOST "gunzip | docker load"
   only:
-    - main
+    - master
 
 publish-frontend:
   stage: publish
   image: docker:24
-  services:
-    - name: docker:24-dind
-      alias: docker
-      command: ["--tls=false"]
   tags:
     - runner
   needs:
     - build-frontend
   before_script:
-    - until docker info > /dev/null 2>&1; do echo "Waiting for Docker daemon..."; sleep 2; done
+    - apk add --no-cache openssh-client
+    - eval $(ssh-agent -s)
+    - echo "$SSH_PRIVATE_KEY" | tr -d '\r' | ssh-add -
+    - mkdir -p ~/.ssh && chmod 700 ~/.ssh
+    - ssh-keyscan -H "$DEPLOY_HOST" >> ~/.ssh/known_hosts
   script:
     - docker build -t $CI_REGISTRY_IMAGE/frontend:$CI_COMMIT_SHA ./frontend
-    - docker save $CI_REGISTRY_IMAGE/frontend:$CI_COMMIT_SHA | gzip > frontend-image.tar.gz
-  artifacts:
-    paths:
-      - frontend-image.tar.gz
-    expire_in: 1 hour
+    - docker save $CI_REGISTRY_IMAGE/frontend:$CI_COMMIT_SHA | gzip | ssh $DEPLOY_USER@$DEPLOY_HOST "gunzip | docker load"
   only:
-    - main
+    - master
 
 # ── Deploy ─────────────────────────────────────────────────────────────────────
 # Variables CI/CD à configurer dans GitLab (Settings → CI/CD → Variables) :
@@ -131,8 +122,18 @@ publish-frontend:
 #   OPENAI_API_KEY       — clé OpenAI (required)
 #   ANTHROPIC_API_KEY    — clé Anthropic (optionnel)
 #   GEMINI_API_KEY       — clé Google Gemini (optionnel)
-#   LLM_MODEL            — ex: gpt-4.1-mini
-#   EMBEDDING_MODEL      — ex: text-embedding-3-large
+#   LLM_MODEL            — ex: gpt-4.1-mini | claude-sonnet-4-6 | ollama/gemma4:e2b
+#   EMBEDDING_MODEL      — ex: text-embedding-3-large (DOIT correspondre au modèle d'ingestion)
+#   OLLAMA_API_BASE      — endpoint Ollama (ex: http://host.docker.internal:11434)
+#                           LiteLLM route automatiquement OpenAI/Anthropic — ne pas mettre ici
+#   LLM_TIMEOUT          — timeout LLM en secondes (défaut: 30 — Ollama CPU: 120+)
+#   EMBEDDING_TIMEOUT    — timeout embedding en secondes (défaut: 60 — Ollama CPU: 300+)
+#   OLLAMA_THINK         — mode thinking Ollama (true | false, défaut: true — false recommandé pour RAG)
+#   INGEST_DEFAULT_PARSER — parser par défaut (mineru | docling | simple — défaut: mineru)
+#                           simple = fallback universel PyMuPDF+markitdown (tous CPU, multimodal)
+#                           utiliser simple sur serveurs sans AVX/x86-v2 (mineru requiert ces instructions)
+#   INGEST_VISION_DETAIL  — détail vision (low | high | auto — défaut: low)
+#   INGEST_REFINERY_TIMEOUT — timeout vision/contextual RAG en secondes (défaut: 120)
 #
 # AUTH
 #   JWT_SECRET_KEY       — secret JWT (générer: python -c "import secrets; print(secrets.token_hex(32))")
@@ -145,8 +146,10 @@ publish-frontend:
 #   MINIO_SECRET_KEY     — mot de passe MinIO
 #   MINIO_BUCKET         — nom du bucket (ex: rag-documents)
 #
-# BASE DE DONNÉES (optionnel — SQLite par défaut)
-#   DATABASE_URL         — ex: postgresql+asyncpg://user:pass@host:5432/ragdb
+# BASE DE DONNÉES (PostgreSQL)
+#   POSTGRES_USER        — utilisateur PostgreSQL (ex: raguser)
+#   POSTGRES_PASSWORD    — mot de passe PostgreSQL
+#   POSTGRES_DB          — nom de la base (défaut: ragdb)
 
 deploy:
   stage: deploy
@@ -177,6 +180,8 @@ deploy:
     - test -n "$OPENAI_API_KEY"
     - test -n "$MINIO_ACCESS_KEY"
     - test -n "$MINIO_SECRET_KEY"
+    - test -n "$POSTGRES_USER"
+    - test -n "$POSTGRES_PASSWORD"
 
     # Génération du fichier app.env (secrets applicatifs injectés dans les containers)
     - |
@@ -191,8 +196,12 @@ deploy:
       JWT_ACCESS_TOKEN_EXPIRE_MINUTES=60
       ADMIN_EMAIL=${ADMIN_EMAIL:-admin@example.com}
       ADMIN_PASSWORD=${ADMIN_PASSWORD:-changeme}
-      CORS_ORIGINS=${CORS_ORIGINS:-https://${DOMAIN_NAME}}
-      DATABASE_URL=${DATABASE_URL:-sqlite+aiosqlite:////app/data/rag.db}
+      CORS_ORIGINS=${CORS_ORIGINS:-http://${DOMAIN_NAME}}
+      LITELLM_API_BASE=${OLLAMA_API_BASE:-${LITELLM_API_BASE:-}}
+      OLLAMA_API_BASE=${OLLAMA_API_BASE:-${LITELLM_API_BASE:-}}
+      POSTGRES_USER=${POSTGRES_USER}
+      POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      POSTGRES_DB=${POSTGRES_DB:-ragdb}
       MINIO_ACCESS_KEY=${MINIO_ACCESS_KEY}
       MINIO_SECRET_KEY=${MINIO_SECRET_KEY}
       MINIO_BUCKET=${MINIO_BUCKET:-rag-documents}
@@ -201,20 +210,27 @@ deploy:
       HYBRID_ALPHA=${HYBRID_ALPHA:-0.5}
       MAX_TOKENS=${MAX_TOKENS:-1000}
       MAX_AGENT_ITER=${MAX_AGENT_ITER:-10}
+      INGEST_DEFAULT_PARSER=${INGEST_DEFAULT_PARSER:-mineru}
       USE_INGEST_VISION_REFINERY=${USE_INGEST_VISION_REFINERY:-false}
       USE_INGEST_CONTEXTUAL_RAG=${USE_INGEST_CONTEXTUAL_RAG:-false}
       INGEST_REFINERY_MODEL=${INGEST_REFINERY_MODEL:-gpt-4.1-mini}
+      INGEST_REFINERY_TIMEOUT=${INGEST_REFINERY_TIMEOUT:-120}
+      INGEST_VISION_DETAIL=${INGEST_VISION_DETAIL:-low}
       CELERY_WORKER_INGEST_CONCURRENCY=${CELERY_WORKER_INGEST_CONCURRENCY:-2}
       CELERY_WORKER_LIGHT_CONCURRENCY=${CELERY_WORKER_LIGHT_CONCURRENCY:-4}
       CELERY_INGEST_SOFT_TIMEOUT=${CELERY_INGEST_SOFT_TIMEOUT:-1800}
       DB_ECHO=false
+      EMBEDDING_TIMEOUT=${EMBEDDING_TIMEOUT:-60}
+      LLM_TIMEOUT=${LLM_TIMEOUT:-30}
+      OLLAMA_THINK=${OLLAMA_THINK:-true}
+      MINIO_ENDPOINT=minio:9000
       EOF
 
-    # Transfert des fichiers sur le serveur
+    # Transfert du compose et des secrets
     - ssh $DEPLOY_USER@$DEPLOY_HOST "mkdir -p '$DEPLOY_PATH'"
-    - scp docker-compose.prod.yml "$DEPLOY_ENV_FILE" backend-image.tar.gz frontend-image.tar.gz $DEPLOY_USER@$DEPLOY_HOST:$DEPLOY_PATH/
+    - scp docker-compose.prod.yml "$DEPLOY_ENV_FILE" $DEPLOY_USER@$DEPLOY_HOST:$DEPLOY_PATH/
 
-    # Déploiement sur le serveur distant
+    # Déploiement (les images sont déjà sur le serveur grâce aux jobs publish)
     - |
       ssh $DEPLOY_USER@$DEPLOY_HOST "
         set -eu &&
@@ -226,11 +242,16 @@ deploy:
         export TRAEFIK_NETWORK='${TRAEFIK_NETWORK:-ingress}' &&
         export MINIO_ACCESS_KEY='${MINIO_ACCESS_KEY}' &&
         export MINIO_SECRET_KEY='${MINIO_SECRET_KEY}' &&
+        export POSTGRES_USER='${POSTGRES_USER}' &&
+        export POSTGRES_PASSWORD='${POSTGRES_PASSWORD}' &&
+        export POSTGRES_DB='${POSTGRES_DB:-ragdb}' &&
         docker network inspect '${TRAEFIK_NETWORK:-ingress}' >/dev/null 2>&1 || docker network create '${TRAEFIK_NETWORK:-ingress}' &&
-        docker load -i backend-image.tar.gz &&
-        docker load -i frontend-image.tar.gz &&
-        docker compose -f docker-compose.prod.yml up -d --remove-orphans &&
-        rm -f backend-image.tar.gz frontend-image.tar.gz
+        docker compose -f docker-compose.prod.yml up -d postgres &&
+        until docker compose -f docker-compose.prod.yml exec -T postgres pg_isready -U '${POSTGRES_USER}' >/dev/null 2>&1; do sleep 2; done &&
+        docker compose -f docker-compose.prod.yml run --rm --no-deps \
+          -e DATABASE_URL=\"postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-ragdb}\" \
+          api /opt/venv/bin/alembic upgrade head &&
+        docker compose -f docker-compose.prod.yml up -d --remove-orphans
       "
   only:
-    - main
+    - master

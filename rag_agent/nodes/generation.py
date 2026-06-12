@@ -4,6 +4,7 @@ Port de rag_pipeline.py:975-1023 + nouveaux nœuds de langgraph_implementation.
 """
 from __future__ import annotations
 
+import os
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Callable
@@ -13,6 +14,7 @@ from loguru import logger
 from ..config import RAGConfig
 from ..llm import parse_json_llm
 from ..state import UnifiedRAGState, log_entry
+from ..utils.audit import write_query_audit
 from ..utils.citations import (
     build_citation_infos,
     extract_cited_docs,
@@ -26,12 +28,12 @@ Ta tâche est de générer une réponse complète et structurée basée UNIQUEME
 
 Règles strictes :
 1. Utilise UNIQUEMENT les informations présentes dans les extraits fournis. Ne fais aucune hypothèse ou supposition.
-2. Cas où l’information n’est pas disponible : Si aucun document ne contient l’information, ou si les extraits fournis ne permettent pas de répondre à la question, réponds exactement par :
-   "Je n’ai pas trouvé d’information officielle à ce sujet dans nos politiques internes. Je vous recommande de contacter directement notre équipe RH."
+2. Cas où l'information n'est pas disponible : Si aucun document ne contient l'information, ou si les extraits fournis ne permettent pas de répondre à la question, réponds exactement par :
+   "Je n'ai pas trouvé d'information officielle à ce sujet dans nos politiques internes. Je vous recommande de contacter directement notre équipe RH."
 3. Préserve les chiffres, versions, barèmes, durées, montants, politiques et détails exacts (ex: indemnités kilométriques, avantages, charte informatique).
 4. Rédige en français, dans un style chaleureux, accueillant et professionnel.
 5. Termine obligatoirement ta réponse (juste avant la section Sources si elle existe) par la signature suivante (sans guillemets) :
-   Est-ce que cette réponse couvre bien votre question ? Pour toute question supplémentaire ou pour une assistance personnalisée, veuillez contacter notre équipe RH à l’adresse suivante : [rh@aghadoe.fr](mailto:rh@aghadoe.fr).
+   Est-ce que cette réponse couvre bien votre question ? Pour toute question supplémentaire ou pour une assistance personnalisée, veuillez contacter notre équipe RH à l'adresse suivante : [rh@aghadoe.fr](mailto:rh@aghadoe.fr).
 6. Ne conclus pas avec d'autres remarques finales, notes, avis ou répétitions après la section Sources. La section Sources est toujours le dernier élément de ta réponse.
 
 Mise en forme :
@@ -87,6 +89,28 @@ def _build_context_entry(index: int, doc: dict) -> str:
     return f"{header}\n{content}"
 
 
+def _extract_agent_synthesis(messages: list) -> str:
+    """Extrait les raisonnements finaux de l'agent (messages assistant sans tool_calls).
+
+    Retourne les 3 derniers messages substantiels — ceux qui contiennent les
+    informations que l'agent a identifiées et synthétisées pendant la boucle ReAct,
+    y compris des données qui n'ont pas forcément survécu au tri final des chunks.
+    """
+    parts = []
+    for msg in messages:
+        if msg.get("role") != "assistant":
+            continue
+        content = (msg.get("content") or "").strip()
+        if not content or msg.get("tool_calls") or len(content) < 60:
+            continue
+        cleaned = content.replace("RECHERCHE_TERMINEE", "").strip()
+        if cleaned:
+            parts.append(cleaned)
+    if not parts:
+        return ""
+    return "\n\n---\n\n".join(parts[-3:])
+
+
 def generate(state: UnifiedRAGState, *, llm_call: Callable, rag_config: RAGConfig) -> dict:
     """Nœud 5 : génère la réponse finale à partir des chunks consolidés."""
     qid      = state["question_id"]
@@ -96,17 +120,33 @@ def generate(state: UnifiedRAGState, *, llm_call: Callable, rag_config: RAGConfi
 
     if not docs:
         answer = (
-            "Je n’ai pas trouvé d’information officielle à ce sujet dans nos politiques internes. "
+            "Je n'ai pas trouvé d'information officielle à ce sujet dans nos politiques internes. "
             "Je vous recommande de contacter directement notre équipe RH.\n\n"
             "Est-ce que cette réponse couvre bien votre question ? Pour toute question supplémentaire ou pour une "
-            "assistance personnalisée, veuillez contacter notre équipe RH à l’adresse suivante : [rh@aghadoe.fr](mailto:rh@aghadoe.fr)."
+            "assistance personnalisée, veuillez contacter notre équipe RH à l'adresse suivante : [rh@aghadoe.fr](mailto:rh@aghadoe.fr)."
         )
         log.append(log_entry("generate", "Aucun document disponible"))
         return {"answer": answer, "final_response": answer, "error": None, "decision_log": log}
 
     context = "\n\n".join(_build_context_entry(i, doc) for i, doc in enumerate(docs, start=1))
 
-    user_content = f"Contexte :\n{context}\n\nQuestion : {question}"
+    # Synthèse de l'agent : raisonnements écrits pendant la boucle ReAct.
+    # Contient parfois des informations clés issues de chunks qui n'ont pas
+    # survécu au tri final — on les injecte avant les extraits pour éviter
+    # la perte d'information entre retrieval et génération.
+    agent_synthesis = _extract_agent_synthesis(state.get("messages", []))
+
+    if agent_synthesis:
+        user_content = (
+            f"Synthèse de recherche de l'agent (informations clés identifiées dans les documents) :\n"
+            f"{agent_synthesis}\n\n"
+            f"---\n\n"
+            f"Extraits documentaires :\n{context}\n\n"
+            f"Question : {question}"
+        )
+    else:
+        user_content = f"Contexte :\n{context}\n\nQuestion : {question}"
+
     if state.get("conversation_summary"):
         user_content = (
             f"Contexte de la conversation précédente :\n{state['conversation_summary']}\n\n"
@@ -136,7 +176,7 @@ def generate(state: UnifiedRAGState, *, llm_call: Callable, rag_config: RAGConfi
     # Post-traitement : s'assurer que la signature obligatoire est présente et placée avant les Sources
     signature = (
         "Est-ce que cette réponse couvre bien votre question ? Pour toute question supplémentaire ou pour une "
-        "assistance personnalisée, veuillez contacter notre équipe RH à l’adresse suivante : [rh@aghadoe.fr](mailto:rh@aghadoe.fr)."
+        "assistance personnalisée, veuillez contacter notre équipe RH à l'adresse suivante : [rh@aghadoe.fr](mailto:rh@aghadoe.fr)."
     )
     if signature not in answer:
         if "---" in answer:
@@ -257,6 +297,14 @@ def generate_post(state: UnifiedRAGState, *, llm_call: Callable, rag_config: RAG
     hidden["conversation_title"] = title
     log.append(log_entry("follow_up", f"{len(suggestions)} suggestions générées"))
     log.append(log_entry("title",     f"Titre généré : {title!r}"))
+
+    # ── Audit ─────────────────────────────────────────────────────────────────
+    audit_dir = os.getenv("RAG_AUDIT_DIR", "audits")
+    try:
+        audit_file = write_query_audit(state, audit_dir=audit_dir)
+        logger.info("Audit écrit : {}", audit_file)
+    except Exception as exc:
+        logger.warning("Audit non écrit : {}", exc)
 
     return {
         "follow_up_suggestions": suggestions,

@@ -18,9 +18,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY requirements.txt .
 
 # NOTE: premier build ~15-20 min (openingestion[mineru] installe torch + transformers)
+# numpy est recompilé depuis les sources (--no-binary) pour cibler le CPU réel du serveur
+# et éviter l'incompatibilité x86-v2 des wheels précompilés sur CPUs sans AVX/SSE4.2.
 RUN python -m venv "$VIRTUAL_ENV" \
     && pip install --upgrade pip \
-    && pip install --no-cache-dir -r requirements.txt
+    && pip install --no-cache-dir -r requirements.txt \
+    && pip install --no-cache-dir --no-binary numpy --force-reinstall \
+       "$(pip show numpy | grep '^Version' | awk '{print "numpy=="$2}')"
 
 # Navigateurs Playwright pour le connecteur web (supprimer si non utilisé)
 RUN playwright install chromium --with-deps

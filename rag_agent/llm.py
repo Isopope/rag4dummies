@@ -50,26 +50,42 @@ def make_llm_caller(
     key_map = provider_api_keys or {}
     llm_provider = _detect_llm_provider(model)
 
+    # Résolution de l'endpoint par provider — même logique que l'embedder :
+    # on laisse LiteLLM utiliser ses endpoints officiels pour OpenAI/Anthropic/etc.
+    # et on ne surcharge api_base que pour Ollama.
+    if llm_provider == "ollama":
+        _effective_api_base = (
+            api_base
+            or os.getenv("OLLAMA_API_BASE")
+            or os.getenv("LITELLM_API_BASE")
+        )
+    else:
+        _effective_api_base = None
+
+    # Ollama : désactive le thinking si OLLAMA_THINK=false (Gemma4 et modèles similaires).
+    _ollama_think = os.getenv("OLLAMA_THINK", "true").lower() != "false"
+    _ollama_extra: dict = {} if _ollama_think else {"options": {"think": False}}
+
     def _call(messages: list, **kwargs) -> Any:
         from llm.factory import get_llm_completion
 
-        # Résolution explicite des credentials provider.
         api_key = key_map.get(llm_provider) or key_map.get("openai") or None
-
-        # `timeout` peut être passé par l'appelant pour surcharger la valeur par défaut
         effective_timeout = kwargs.pop("timeout", timeout)
 
-        # Transmettre `response_format` si nécessaire pour la compatibilité
         response_format = kwargs.pop("response_format", None)
         if response_format:
             kwargs["response_format"] = response_format
-           
+
+        if llm_provider == "ollama":
+            for k, v in _ollama_extra.items():
+                kwargs.setdefault(k, v)
+
         resp = get_llm_completion(
             model=model,
             messages=messages,
             timeout=effective_timeout,
             api_key=api_key,
-            api_base=api_base,
+            api_base=_effective_api_base,
             **kwargs
         )
         return resp

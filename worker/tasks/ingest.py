@@ -138,7 +138,7 @@ def _build_weaviate_store():
 def ingest_pdf_task(
     self: Task,
     object_key: str,
-    parser: str    = "mineru",
+    parser: str    = os.getenv("INGEST_DEFAULT_PARSER", "mineru"),
     strategy: str  = "by_sentence",
     filename: str  = "",
     entity: str | None = None,

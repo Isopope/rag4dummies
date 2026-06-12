@@ -24,7 +24,7 @@ services:
       - internal
 
   minio:
-    image: minio/minio:latest
+    image: minio/minio:RELEASE.2022-09-07T22-25-02Z
     restart: unless-stopped
     environment:
       MINIO_ROOT_USER: ${MINIO_ACCESS_KEY}
@@ -32,12 +32,6 @@ services:
     command: server /data --console-address ":9001"
     volumes:
       - minio_data:/data
-    healthcheck:
-      test: ["CMD", "mc", "ready", "local"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-      start_period: 10s
     networks:
       - internal
 
@@ -51,6 +45,24 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    networks:
+      - internal
+
+  postgres:
+    image: postgres:15-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:-ragdb}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB:-ragdb}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
     networks:
       - internal
 
@@ -69,13 +81,18 @@ services:
       MINIO_SECURE: "false"
       CELERY_BROKER_URL: "redis://redis:6379/0"
       CELERY_RESULT_BACKEND: "redis://redis:6379/1"
+      DATABASE_URL: "postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-ragdb}"
     depends_on:
       weaviate:
         condition: service_healthy
       redis:
         condition: service_healthy
       minio:
+        condition: service_started
+      postgres:
         condition: service_healthy
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     networks:
       - internal
       - reverse-proxy-net
@@ -83,7 +100,7 @@ services:
       - "traefik.enable=true"
       # Route /api/* → backend (priorité haute pour ne pas être écrasé par la route frontend)
       - "traefik.http.routers.${PROJECT_NAME}-api.rule=Host(`${DOMAIN_NAME}`) && PathPrefix(`/api`)"
-      - "traefik.http.routers.${PROJECT_NAME}-api.priority=10"
+      - "traefik.http.routers.${PROJECT_NAME}-api.priority=100"
       # Middleware StripPrefix : /api/query → /query
       - "traefik.http.routers.${PROJECT_NAME}-api.middlewares=${PROJECT_NAME}-strip-api"
       - "traefik.http.middlewares.${PROJECT_NAME}-strip-api.stripprefix.prefixes=/api"
@@ -103,22 +120,27 @@ services:
       MINIO_SECURE: "false"
       CELERY_BROKER_URL: "redis://redis:6379/0"
       CELERY_RESULT_BACKEND: "redis://redis:6379/1"
+      DATABASE_URL: "postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-ragdb}"
     command:
       - /opt/venv/bin/celery
       - "-A"
-      - worker.app
+      - worker.app.celery_app
       - worker
       - "-l"
       - info
       - "-Q"
-      - "ingest,light"
+      - "rag.ingest,rag.light"
       - "-c"
       - "2"
     depends_on:
       redis:
         condition: service_healthy
       minio:
+        condition: service_started
+      postgres:
         condition: service_healthy
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     networks:
       - internal
 
@@ -141,6 +163,7 @@ volumes:
   weaviate_data:
   minio_data:
   redis_data:
+  postgres_data:
 
 networks:
   internal:

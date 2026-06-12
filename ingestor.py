@@ -596,70 +596,431 @@ def _ingest_with_openingestion(
     return chunk_dicts, content_vectors, title_vectors
 
 
-# ── mode fallback (PyMuPDF) ───────────────────────────────────────────────────
+# ── mode fallback multimodal (PyMuPDF + markitdown + openingestion chunker) ──────
+#
+# Architecture inspirée d'Onyx :
+#   [1] Parseur texte par format (PDF→fitz, Office→markitdown, TXT→brut)
+#   [2] Extraction images en bytes (fitz pour PDF, zipfile pour DOCX/PPTX)
+#   [3] Description vision optionnelle (réutilise _LiteLLMGenie.generate_vision)
+#   [4] Fusion blocs texte + images en ordre de lecture
+#   [5] Chunking intelligent via openingestion.SentenceChunker
+#   [6] Conversion RagChunk → chunk dict Weaviate
+
+_SIMPLE_FALLBACK_FORMATS = {".pdf", ".docx", ".pptx", ".xlsx", ".txt"}
+
+# ── [1] Parseurs de texte ─────────────────────────────────────────────────────
+
+def _parse_pdf_to_blocks(document_path: Path):
+    """PDF → list[ContentBlock] avec détection de titres par heuristique typographique."""
+    import fitz
+    from openingestion.document import ContentBlock, BlockKind
+
+    doc = fitz.open(str(document_path))
+    doc_title = (doc.metadata or {}).get("title", "").strip() or document_path.stem
+    blocks = []
+    block_idx = 0
+
+    for page in doc:
+        page_dict = page.get_text("dict")
+        page_blocks = page_dict.get("blocks", [])
+
+        sizes = [
+            sp["size"]
+            for b in page_blocks if b.get("type") == 0
+            for line in b.get("lines", [])
+            for sp in line.get("spans", [])
+            if sp.get("text", "").strip()
+        ]
+        median_size = sorted(sizes)[len(sizes) // 2] if sizes else 12.0
+
+        for b in page_blocks:
+            if b.get("type") != 0:
+                continue
+            text = " ".join(
+                sp["text"]
+                for line in b.get("lines", [])
+                for sp in line.get("spans", [])
+                if sp.get("text", "").strip()
+            ).strip()
+            if not text:
+                continue
+
+            max_size = max(
+                (sp.get("size", 0) for line in b.get("lines", []) for sp in line.get("spans", [])),
+                default=0,
+            )
+            is_bold = any(
+                sp.get("flags", 0) & 16
+                for line in b.get("lines", []) for sp in line.get("spans", [])
+            )
+            bbox = b.get("bbox", [0, 0, 0, 0])
+            is_heading = len(text) < 120 and (max_size >= median_size * 1.15 or is_bold)
+
+            blocks.append(ContentBlock(
+                kind=BlockKind.TITLE if is_heading else BlockKind.TEXT,
+                text=text,
+                page_idx=page.number,
+                bbox=[int(x) for x in bbox],
+                block_index=block_idx,
+                reading_order=block_idx,
+            ))
+            block_idx += 1
+
+    doc.close()
+    return doc_title, blocks
+
+
+def _parse_office_to_blocks(document_path: Path):
+    """DOCX / PPTX / XLSX → list[ContentBlock] via markitdown → markdown."""
+    from openingestion.document import ContentBlock, BlockKind
+    from markitdown import MarkItDown
+
+    md = MarkItDown(enable_plugins=False)
+    result = md.convert(str(document_path))
+    markdown = getattr(result, "markdown", None) or getattr(result, "text_content", "") or ""
+
+    doc_title = document_path.stem
+    blocks = []
+    block_idx = 0
+    slide_idx = 0
+
+    for line in markdown.splitlines():
+        stripped = line.strip()
+        if not stripped:
+            if document_path.suffix.lower() == ".pptx":
+                slide_idx += 1
+            continue
+
+        page_idx = slide_idx
+
+        if stripped.startswith("## "):
+            kind, text = BlockKind.TITLE, stripped[3:].strip()
+            if not doc_title or doc_title == document_path.stem:
+                pass
+        elif stripped.startswith("# "):
+            kind, text = BlockKind.TITLE, stripped[2:].strip()
+            if doc_title == document_path.stem:
+                doc_title = text
+        elif stripped.startswith("|") and stripped.endswith("|"):
+            kind, text = BlockKind.TABLE, stripped
+        else:
+            kind, text = BlockKind.TEXT, stripped
+
+        if text:
+            blocks.append(ContentBlock(
+                kind=kind,
+                text=text,
+                page_idx=page_idx,
+                bbox=[0, 0, 0, 0],
+                block_index=block_idx,
+                reading_order=block_idx,
+            ))
+            block_idx += 1
+
+    return doc_title, blocks
+
+
+def _parse_text_to_blocks(document_path: Path):
+    """TXT → list[ContentBlock] par paragraphes."""
+    from openingestion.document import ContentBlock, BlockKind
+
+    text = document_path.read_text(encoding="utf-8", errors="replace")
+    doc_title = document_path.stem
+    blocks = []
+
+    for idx, paragraph in enumerate(text.split("\n\n")):
+        stripped = paragraph.strip()
+        if stripped:
+            blocks.append(ContentBlock(
+                kind=BlockKind.TEXT,
+                text=stripped,
+                page_idx=0,
+                bbox=[0, 0, 0, 0],
+                block_index=idx,
+                reading_order=idx,
+            ))
+
+    return doc_title, blocks
+
+
+# ── [2] Extraction d'images ───────────────────────────────────────────────────
+
+def _extract_doc_images(
+    document_path: Path,
+) -> list[tuple[bytes, str, int]]:
+    """Extrait les images embarquées : (bytes, mime_type, page_idx)."""
+    import mimetypes
+    ext = document_path.suffix.lower()
+    images: list[tuple[bytes, str, int]] = []
+
+    if ext == ".pdf":
+        try:
+            import fitz
+            doc = fitz.open(str(document_path))
+            for page in doc:
+                for img_info in page.get_images(full=True):
+                    xref = img_info[0]
+                    try:
+                        pix = fitz.Pixmap(doc, xref)
+                        if pix.n - pix.alpha > 3:
+                            pix = fitz.Pixmap(fitz.csRGB, pix)
+                        images.append((pix.tobytes("png"), "image/png", page.number))
+                    except Exception:
+                        pass
+            doc.close()
+        except Exception as exc:
+            logger.warning("Extraction images PDF échouée : {}", exc)
+
+    elif ext in (".docx", ".pptx"):
+        import zipfile
+        media_prefix = "word/media/" if ext == ".docx" else "ppt/media/"
+        try:
+            with zipfile.ZipFile(document_path) as z:
+                for name in z.namelist():
+                    if name.startswith(media_prefix) and not name.endswith("/"):
+                        mime = mimetypes.guess_type(name)[0] or "image/png"
+                        if mime.startswith("image/"):
+                            images.append((z.read(name), mime, 0))
+        except Exception as exc:
+            logger.warning("Extraction images {} échouée : {}", ext, exc)
+
+    return images
+
+
+# ── [3] Description vision ────────────────────────────────────────────────────
+
+def _describe_images(
+    images: list[tuple[bytes, str, int]],
+    api_key: str,
+) -> list[tuple[str, int]]:
+    """Retourne (description, page_idx) pour chaque image.
+
+    Si USE_INGEST_VISION_REFINERY=false, retourne un placeholder sans appel LLM.
+    """
+    import base64
+
+    config = _load_ingestion_refinery_config()
+    results: list[tuple[str, int]] = []
+
+    for img_bytes, mime, page_idx in images:
+        if not config.use_vision_refinery:
+            results.append((f"[Image p. {page_idx + 1}]", page_idx))
+            continue
+
+        try:
+            genie = _build_refinery_genie(config, api_key=api_key)
+            b64 = base64.b64encode(img_bytes).decode()
+            image_url = f"data:{mime};base64,{b64}"
+            description = genie.generate_vision(
+                prompt="Décris précisément le contenu de cette image dans le contexte d'un document professionnel.",
+                image_b64=image_url,
+                detail=config.vision_detail,
+            )
+            results.append((description.strip() or f"[Image p. {page_idx + 1}]", page_idx))
+        except Exception as exc:
+            logger.warning("Description vision image p.{} échouée : {}", page_idx, exc)
+            results.append((f"[Image p. {page_idx + 1}]", page_idx))
+
+    return results
+
+
+# ── [4] Fusion blocs texte + images ──────────────────────────────────────────
+
+def _build_and_merge_blocks(
+    text_blocks,
+    image_descriptions: list[tuple[str, int]],
+    start_idx: int,
+) -> list:
+    """Insère les blocs IMAGE dans le flux texte, triés par page_idx puis reading_order."""
+    from openingestion.document import ContentBlock, BlockKind
+
+    extra_blocks = []
+    for i, (description, page_idx) in enumerate(image_descriptions):
+        extra_blocks.append(ContentBlock(
+            kind=BlockKind.IMAGE,
+            text=description,
+            page_idx=page_idx,
+            bbox=[0, 0, 0, 0],
+            block_index=start_idx + i,
+            reading_order=start_idx + i,
+        ))
+
+    merged = list(text_blocks) + extra_blocks
+    merged.sort(key=lambda b: (b.page_idx, b.reading_order))
+
+    # ContentBlock est frozen — on recrée avec les bons indices après tri
+    reindexed = [
+        ContentBlock(
+            kind=b.kind,
+            text=b.text,
+            page_idx=b.page_idx,
+            bbox=b.bbox,
+            block_index=i,
+            reading_order=i,
+        )
+        for i, b in enumerate(merged)
+    ]
+    return reindexed
+
+
+# ── [5 & 6] Chunking + conversion ────────────────────────────────────────────
+
+def _rag_chunks_to_dicts(
+    rag_chunks,
+    source: str,
+    entity: str | None,
+    validity_date: str | None,
+) -> list[dict]:
+    """Convertit list[RagChunk] en list[chunk dict] compatible Weaviate."""
+    import json
+
+    # Filtre les chunks vides (blocs TITLE isolés sans contenu textuel)
+    non_empty = [rc for rc in rag_chunks if rc.page_content.strip()]
+
+    chunk_dicts = []
+    for i, rc in enumerate(non_empty):
+        kind_str = rc.kind.value if hasattr(rc.kind, "value") else str(rc.kind).lower()
+        page_idx = rc.position_int[0][0] if rc.position_int else 0
+        bboxes = rc.position_int or []
+
+        chunk_dicts.append({
+            "page_content":   rc.page_content,
+            "source":         source,
+            "kind":           kind_str,
+            "title_path":     rc.title_path or "",
+            "title_level":    rc.title_level,
+            "chunk_index":    i,
+            "reading_order":  rc.reading_order,
+            "prev_chunk":     i - 1,
+            "next_chunk":     i + 1 if i < len(non_empty) - 1 else -1,
+            "page_idx":       page_idx,
+            "token_count":    rc.token_count or max(1, len(rc.page_content.split())),
+            "html":           rc.extras.get("html", "") if rc.extras else "",
+            "captions_json":  "[]",
+            "footnotes_json": "[]",
+            "bboxes_json":    json.dumps(bboxes),
+            "entity":         entity or "",
+            **({"validity_date": validity_date} if validity_date else {}),
+        })
+
+    return chunk_dicts
+
 
 def _ingest_simple(
     document_path: Path,
     source: str,
     api_key: str,
     embedding_model: str,
-    chunk_size: int = 800,
+    chunk_size: int = 512,
     progress_cb: Callable[[str], None] | None = None,
     entity: str | None = None,
     validity_date: str | None = None,
 ) -> tuple[list[dict], list[list[float]], list[list[float]]]:
-    try:
-        import fitz
-    except ImportError:
-        raise ImportError("pymupdf est requis en mode fallback : pip install pymupdf")
+    """Fallback multimodal : PyMuPDF + markitdown + openingestion.SentenceChunker.
 
+    Route chaque format vers le bon parseur, extrait les images embarquées,
+    les décrit optionnellement via un modèle de vision, puis chunke avec le
+    SentenceChunker d'openingestion pour préserver les frontières de phrases
+    et la hiérarchie des sections (title_path).
+    """
     _cb = progress_cb or (lambda m: None)
-    _cb(f"Extraction texte de '{document_path.name}' (mode simple)…")
+    ext = document_path.suffix.lower()
 
-    doc = fitz.open(str(document_path))
-    raw_pages: list[tuple[int, str]] = []
-    for page in doc:
-        text = page.get_text("text").strip()
-        if text:
-            raw_pages.append((page.number, text))
-    doc.close()
+    # ── [1] Parse texte selon le format ───────────────────────────────────────
+    try:
+        from openingestion.chunker.by_sentence import SentenceChunker as _OISentenceChunker
+        from openingestion.document import ContentBlock, BlockKind  # noqa: F401
+        _oi_chunker_ok = True
+    except ImportError:
+        _oi_chunker_ok = False
+        logger.warning("openingestion.SentenceChunker absent — fallback 800-chars activé.")
 
-    _cb(f"{len(raw_pages)} pages avec du texte.")
+    if ext == ".pdf":
+        _cb(f"Extraction structurée PDF '{document_path.name}'…")
+        try:
+            import fitz  # noqa: F401
+            doc_title, text_blocks = _parse_pdf_to_blocks(document_path)
+        except ImportError:
+            raise ImportError("pymupdf est requis en mode fallback : pip install pymupdf")
+    elif ext in (".docx", ".pptx", ".xlsx"):
+        _cb(f"Conversion Office '{document_path.name}' via markitdown…")
+        try:
+            doc_title, text_blocks = _parse_office_to_blocks(document_path)
+        except ImportError:
+            raise ImportError(
+                f"markitdown est requis pour ingérer les fichiers {ext} en mode simple : "
+                "pip install markitdown"
+            )
+    elif ext == ".txt":
+        _cb(f"Extraction texte brut '{document_path.name}'…")
+        doc_title, text_blocks = _parse_text_to_blocks(document_path)
+    else:
+        raise RuntimeError(f"Format non supporté en mode simple : {ext}")
 
-    chunk_dicts: list[dict] = []
-    idx = 0
-    for page_idx, text in raw_pages:
-        for start in range(0, len(text), chunk_size):
-            block = text[start : start + chunk_size].strip()
-            if not block:
-                continue
-            chunk_dicts.append({
-                "page_content":   block,
-                "source":        source,
-                "kind":          "text",
-                "title_path":    "",
-                "title_level":   0,
-                "chunk_index":   idx,
-                "reading_order": idx,
-                "prev_chunk":    idx - 1,
-                "next_chunk":    -1,
-                "page_idx":      page_idx,
-                "token_count":   len(block) // 4,
-                "html":          "",
-                "captions_json": "[]",
-                "footnotes_json":"[]",
-                "bboxes_json":   "[]",
-            })
-            idx += 1
+    n_titles = sum(1 for b in text_blocks if hasattr(b, "kind") and "TITLE" in str(b.kind).upper())
+    n_text   = len(text_blocks) - n_titles
+    _cb(f"  {n_text} blocs texte, {n_titles} titres détectés.")
 
-    _cb(f"{len(chunk_dicts)} chunks créés (mode simple).")
+    # ── [2] Extraction images ──────────────────────────────────────────────────
+    images = _extract_doc_images(document_path)
+    if images:
+        _cb(f"  {len(images)} image(s) trouvée(s).")
 
-    # Injecter les métadonnées métier avant enrichissement
-    for chunk in chunk_dicts:
-        chunk["entity"] = entity or ""
-        if validity_date:
-            chunk["validity_date"] = validity_date
+    # ── [3] Descriptions vision ────────────────────────────────────────────────
+    image_descriptions: list[tuple[str, int]] = []
+    if images:
+        config = _load_ingestion_refinery_config()
+        action = "vision LLM" if config.use_vision_refinery else "placeholders"
+        _cb(f"  Traitement images ({action})…")
+        image_descriptions = _describe_images(images, api_key)
 
+    # ── [4] Fusion blocs texte + images ────────────────────────────────────────
+    all_blocks = _build_and_merge_blocks(text_blocks, image_descriptions, len(text_blocks))
+
+    # ── [5] Chunking ───────────────────────────────────────────────────────────
+    if _oi_chunker_ok and all_blocks:
+        _cb(f"Chunking par phrases (chunk_size={chunk_size} tokens)…")
+        chunker = _OISentenceChunker(chunk_size=chunk_size, chunk_overlap=0)
+        rag_chunks = chunker(all_blocks, source=source)
+        _cb(f"  {len(rag_chunks)} chunks créés (mode simple+openingestion).")
+        chunk_dicts = _rag_chunks_to_dicts(rag_chunks, source, entity, validity_date)
+    else:
+        # Fallback 800-chars si SentenceChunker absent
+        _cb(f"Chunking naïf (fallback 800 chars)…")
+        chunk_dicts = []
+        idx = 0
+        for b in all_blocks:
+            text = b.text if hasattr(b, "text") else str(b)
+            page_idx = b.page_idx if hasattr(b, "page_idx") else 0
+            for start in range(0, len(text), 800):
+                block = text[start: start + 800].strip()
+                if not block:
+                    continue
+                chunk_dicts.append({
+                    "page_content":   block,
+                    "source":         source,
+                    "kind":           "text",
+                    "title_path":     "",
+                    "title_level":    0,
+                    "chunk_index":    idx,
+                    "reading_order":  idx,
+                    "prev_chunk":     idx - 1,
+                    "next_chunk":     idx + 1,
+                    "page_idx":       page_idx,
+                    "token_count":    max(1, len(block.split())),
+                    "html":           "",
+                    "captions_json":  "[]",
+                    "footnotes_json": "[]",
+                    "bboxes_json":    "[]",
+                    "entity":         entity or "",
+                    **({"validity_date": validity_date} if validity_date else {}),
+                })
+                idx += 1
+        if chunk_dicts:
+            chunk_dicts[-1]["next_chunk"] = -1
+        _cb(f"  {len(chunk_dicts)} chunks créés (fallback naïf).")
+
+    # ── [6] Embedding ──────────────────────────────────────────────────────────
     _cb("Embedding des chunks (Modèle d'embedding)…")
     content_vectors, title_vectors = _embed_content_and_titles(
         chunk_dicts, api_key, embedding_model, _cb
@@ -671,7 +1032,7 @@ def _ingest_simple(
 # ── point d'entrée public ─────────────────────────────────────────────────────
 
 def _supports_simple_fallback(file_path: Path) -> bool:
-    return file_path.suffix.lower() == ".pdf"
+    return file_path.suffix.lower() in _SIMPLE_FALLBACK_FORMATS
 
 
 def ingest_document(
@@ -747,7 +1108,10 @@ def ingest_document(
                 entity=entity,
                 validity_date=rfc3339_date,
             )
-        except ImportError:
+        except ImportError as _oi_exc:
+            logger.warning(
+                "openingestion ImportError (détail) : {}", _oi_exc
+            )
             if not _supports_simple_fallback(file_path):
                 raise RuntimeError(
                     f"openingestion est requis pour ingérer les fichiers '{file_path.suffix.lower() or 'sans extension'}'."

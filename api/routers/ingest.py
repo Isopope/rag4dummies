@@ -146,7 +146,7 @@ async def _submit_document_ingest(
 )
 async def ingest_file(
     file: UploadFile = File(..., description="Fichier à indexer (.pdf, .docx, .pptx, .txt)"),
-    parser: str = Form("mineru", description="Parser : docling | mineru | simple"),
+    parser: str = Form(os.getenv("INGEST_DEFAULT_PARSER", "mineru"), description="Parser : docling | mineru | simple"),
     strategy: str = Form("by_sentence", description="Stratégie de découpage : by_token | by_sentence | by_block"),
     entity: str | None = Form(None, description="Entité propriétaire (ex. 'dassault', 'thales')"),
     validity_date: str | None = Form(None, description="Date de validité ISO YYYY-MM-DD"),

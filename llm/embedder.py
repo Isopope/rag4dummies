@@ -1,6 +1,7 @@
 """
 Centralized embedder functions and classes via LiteLLM.
 """
+import os
 import threading
 import time
 from contextvars import copy_context
@@ -34,13 +35,31 @@ class EmbeddingModel:
         model: str,
         api_key: Optional[str] = None,
         api_base: Optional[str] = None,
-        timeout: float = 60.0,
+        timeout: float = float(os.getenv("EMBEDDING_TIMEOUT", "60")),
     ) -> None:
         self.model = model
         self.api_key = api_key
-        self.api_base = api_base
         self.timeout = timeout
         self.provider = self._detect_provider(model)
+        self.api_base = self._resolve_api_base(api_base)
+
+    def _resolve_api_base(self, api_base: Optional[str]) -> Optional[str]:
+        """Retourne l'endpoint approprié selon le provider.
+
+        LiteLLM route les appels selon le préfixe du modèle ET l'api_base.
+        Passer un endpoint Ollama à un modèle OpenAI lui fait chercher
+        text-embedding-3-large sur localhost:11434 → 404.
+        On résout l'api_base par provider pour laisser chaque provider
+        utiliser son propre endpoint.
+        """
+        if self.provider == EmbeddingProvider.OLLAMA:
+            return (
+                api_base
+                or os.getenv("OLLAMA_API_BASE")
+                or os.getenv("LITELLM_API_BASE")
+            )
+        # OpenAI, Cohere, Voyage, Mistral, Google → endpoints officiels gérés par LiteLLM
+        return None
 
     def _detect_provider(self, model: str) -> EmbeddingProvider:
         """Detect provider from model string prefix."""
