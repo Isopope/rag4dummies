@@ -52,8 +52,13 @@ async def crawl_local(body: CrawlLocalRequest, _: User = Depends(current_admin_u
         raise HTTPException(status_code=400, detail="parser doit être : docling | mineru | simple")
     if body.strategy not in ("by_token", "by_sentence", "by_block"):
         raise HTTPException(status_code=400, detail="strategy doit être : by_token | by_sentence | by_block")
-    if body.parser == "simple" and any(ext.lower() != ".pdf" for ext in body.ext):
-        raise HTTPException(status_code=400, detail="Le parser simple n'est supporté que pour les fichiers PDF.")
+    if body.parser == "simple":
+        from parsing.extract import SUPPORTED_EXTENSIONS
+        if any(ext.lower() not in SUPPORTED_EXTENSIONS for ext in body.ext):
+            raise HTTPException(
+                status_code=400,
+                detail="Le parser simple supporte : PDF, DOCX, PPTX, XLSX, TXT.",
+            )
 
     from worker.queues import LIGHT_QUEUE, RagCeleryPriority
 

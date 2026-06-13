@@ -596,198 +596,20 @@ def _ingest_with_openingestion(
     return chunk_dicts, content_vectors, title_vectors
 
 
-# ── mode fallback multimodal (PyMuPDF + markitdown + openingestion chunker) ──────
+# ── mode fallback robuste (extraction façon Onyx + openingestion chunker) ────────
 #
-# Architecture inspirée d'Onyx :
-#   [1] Parseur texte par format (PDF→fitz, Office→markitdown, TXT→brut)
-#   [2] Extraction images en bytes (fitz pour PDF, zipfile pour DOCX/PPTX)
-#   [3] Description vision optionnelle (réutilise _LiteLLMGenie.generate_vision)
-#   [4] Fusion blocs texte + images en ordre de lecture
-#   [5] Chunking intelligent via openingestion.SentenceChunker
-#   [6] Conversion RagChunk → chunk dict Weaviate
+# Architecture (cf. module ``parsing/`` inspiré de file_processing d'Onyx) :
+#   [1] Extraction par dispatch de format → ExtractionResult page-aware
+#       (texte à plat + images + metadata), via parsing.extract.extract_document
+#   [2] Description vision optionnelle des images (option d'enrichissement)
+#   [3] Conversion en ContentBlock page-aware (parsing.blocks)
+#   [4] Chunking by_sentence via openingestion.SentenceChunker
+#   [5] Conversion RagChunk → chunk dict Weaviate
 
 _SIMPLE_FALLBACK_FORMATS = {".pdf", ".docx", ".pptx", ".xlsx", ".txt"}
 
-# ── [1] Parseurs de texte ─────────────────────────────────────────────────────
 
-def _parse_pdf_to_blocks(document_path: Path):
-    """PDF → list[ContentBlock] avec détection de titres par heuristique typographique."""
-    import fitz
-    from openingestion.document import ContentBlock, BlockKind
-
-    doc = fitz.open(str(document_path))
-    doc_title = (doc.metadata or {}).get("title", "").strip() or document_path.stem
-    blocks = []
-    block_idx = 0
-
-    for page in doc:
-        page_dict = page.get_text("dict")
-        page_blocks = page_dict.get("blocks", [])
-
-        sizes = [
-            sp["size"]
-            for b in page_blocks if b.get("type") == 0
-            for line in b.get("lines", [])
-            for sp in line.get("spans", [])
-            if sp.get("text", "").strip()
-        ]
-        median_size = sorted(sizes)[len(sizes) // 2] if sizes else 12.0
-
-        for b in page_blocks:
-            if b.get("type") != 0:
-                continue
-            text = " ".join(
-                sp["text"]
-                for line in b.get("lines", [])
-                for sp in line.get("spans", [])
-                if sp.get("text", "").strip()
-            ).strip()
-            if not text:
-                continue
-
-            max_size = max(
-                (sp.get("size", 0) for line in b.get("lines", []) for sp in line.get("spans", [])),
-                default=0,
-            )
-            is_bold = any(
-                sp.get("flags", 0) & 16
-                for line in b.get("lines", []) for sp in line.get("spans", [])
-            )
-            bbox = b.get("bbox", [0, 0, 0, 0])
-            is_heading = len(text) < 120 and (max_size >= median_size * 1.15 or is_bold)
-
-            blocks.append(ContentBlock(
-                kind=BlockKind.TITLE if is_heading else BlockKind.TEXT,
-                text=text,
-                page_idx=page.number,
-                bbox=[int(x) for x in bbox],
-                block_index=block_idx,
-                reading_order=block_idx,
-            ))
-            block_idx += 1
-
-    doc.close()
-    return doc_title, blocks
-
-
-def _parse_office_to_blocks(document_path: Path):
-    """DOCX / PPTX / XLSX → list[ContentBlock] via markitdown → markdown."""
-    from openingestion.document import ContentBlock, BlockKind
-    from markitdown import MarkItDown
-
-    md = MarkItDown(enable_plugins=False)
-    result = md.convert(str(document_path))
-    markdown = getattr(result, "markdown", None) or getattr(result, "text_content", "") or ""
-
-    doc_title = document_path.stem
-    blocks = []
-    block_idx = 0
-    slide_idx = 0
-
-    for line in markdown.splitlines():
-        stripped = line.strip()
-        if not stripped:
-            if document_path.suffix.lower() == ".pptx":
-                slide_idx += 1
-            continue
-
-        page_idx = slide_idx
-
-        if stripped.startswith("## "):
-            kind, text = BlockKind.TITLE, stripped[3:].strip()
-            if not doc_title or doc_title == document_path.stem:
-                pass
-        elif stripped.startswith("# "):
-            kind, text = BlockKind.TITLE, stripped[2:].strip()
-            if doc_title == document_path.stem:
-                doc_title = text
-        elif stripped.startswith("|") and stripped.endswith("|"):
-            kind, text = BlockKind.TABLE, stripped
-        else:
-            kind, text = BlockKind.TEXT, stripped
-
-        if text:
-            blocks.append(ContentBlock(
-                kind=kind,
-                text=text,
-                page_idx=page_idx,
-                bbox=[0, 0, 0, 0],
-                block_index=block_idx,
-                reading_order=block_idx,
-            ))
-            block_idx += 1
-
-    return doc_title, blocks
-
-
-def _parse_text_to_blocks(document_path: Path):
-    """TXT → list[ContentBlock] par paragraphes."""
-    from openingestion.document import ContentBlock, BlockKind
-
-    text = document_path.read_text(encoding="utf-8", errors="replace")
-    doc_title = document_path.stem
-    blocks = []
-
-    for idx, paragraph in enumerate(text.split("\n\n")):
-        stripped = paragraph.strip()
-        if stripped:
-            blocks.append(ContentBlock(
-                kind=BlockKind.TEXT,
-                text=stripped,
-                page_idx=0,
-                bbox=[0, 0, 0, 0],
-                block_index=idx,
-                reading_order=idx,
-            ))
-
-    return doc_title, blocks
-
-
-# ── [2] Extraction d'images ───────────────────────────────────────────────────
-
-def _extract_doc_images(
-    document_path: Path,
-) -> list[tuple[bytes, str, int]]:
-    """Extrait les images embarquées : (bytes, mime_type, page_idx)."""
-    import mimetypes
-    ext = document_path.suffix.lower()
-    images: list[tuple[bytes, str, int]] = []
-
-    if ext == ".pdf":
-        try:
-            import fitz
-            doc = fitz.open(str(document_path))
-            for page in doc:
-                for img_info in page.get_images(full=True):
-                    xref = img_info[0]
-                    try:
-                        pix = fitz.Pixmap(doc, xref)
-                        if pix.n - pix.alpha > 3:
-                            pix = fitz.Pixmap(fitz.csRGB, pix)
-                        images.append((pix.tobytes("png"), "image/png", page.number))
-                    except Exception:
-                        pass
-            doc.close()
-        except Exception as exc:
-            logger.warning("Extraction images PDF échouée : {}", exc)
-
-    elif ext in (".docx", ".pptx"):
-        import zipfile
-        media_prefix = "word/media/" if ext == ".docx" else "ppt/media/"
-        try:
-            with zipfile.ZipFile(document_path) as z:
-                for name in z.namelist():
-                    if name.startswith(media_prefix) and not name.endswith("/"):
-                        mime = mimetypes.guess_type(name)[0] or "image/png"
-                        if mime.startswith("image/"):
-                            images.append((z.read(name), mime, 0))
-        except Exception as exc:
-            logger.warning("Extraction images {} échouée : {}", ext, exc)
-
-    return images
-
-
-# ── [3] Description vision ────────────────────────────────────────────────────
+# ── Description vision ────────────────────────────────────────────────────────
 
 def _describe_images(
     images: list[tuple[bytes, str, int]],
@@ -824,46 +646,7 @@ def _describe_images(
     return results
 
 
-# ── [4] Fusion blocs texte + images ──────────────────────────────────────────
-
-def _build_and_merge_blocks(
-    text_blocks,
-    image_descriptions: list[tuple[str, int]],
-    start_idx: int,
-) -> list:
-    """Insère les blocs IMAGE dans le flux texte, triés par page_idx puis reading_order."""
-    from openingestion.document import ContentBlock, BlockKind
-
-    extra_blocks = []
-    for i, (description, page_idx) in enumerate(image_descriptions):
-        extra_blocks.append(ContentBlock(
-            kind=BlockKind.IMAGE,
-            text=description,
-            page_idx=page_idx,
-            bbox=[0, 0, 0, 0],
-            block_index=start_idx + i,
-            reading_order=start_idx + i,
-        ))
-
-    merged = list(text_blocks) + extra_blocks
-    merged.sort(key=lambda b: (b.page_idx, b.reading_order))
-
-    # ContentBlock est frozen — on recrée avec les bons indices après tri
-    reindexed = [
-        ContentBlock(
-            kind=b.kind,
-            text=b.text,
-            page_idx=b.page_idx,
-            bbox=b.bbox,
-            block_index=i,
-            reading_order=i,
-        )
-        for i, b in enumerate(merged)
-    ]
-    return reindexed
-
-
-# ── [5 & 6] Chunking + conversion ────────────────────────────────────────────
+# ── Conversion RagChunk → dict ───────────────────────────────────────────────
 
 def _rag_chunks_to_dicts(
     rag_chunks,
@@ -906,6 +689,54 @@ def _rag_chunks_to_dicts(
     return chunk_dicts
 
 
+def _naive_chunk_segments(
+    result,
+    image_descriptions: list[tuple[str, int]],
+    source: str,
+    entity: str | None,
+    validity_date: str | None,
+) -> list[dict]:
+    """Dernier recours (800 chars) si openingestion.SentenceChunker est absent.
+
+    Préserve le ``page_idx`` de chaque segment. N'est utilisé que si le chunker
+    by_sentence ne peut pas être importé — le chemin normal reste toujours
+    by_sentence.
+    """
+    pieces: list[tuple[str, int]] = [(seg.text, seg.page_idx) for seg in result.segments]
+    pieces.extend((desc, page_idx) for desc, page_idx in image_descriptions)
+
+    chunk_dicts: list[dict] = []
+    idx = 0
+    for text, page_idx in pieces:
+        for start in range(0, len(text), 800):
+            block = text[start : start + 800].strip()
+            if not block:
+                continue
+            chunk_dicts.append({
+                "page_content":   block,
+                "source":         source,
+                "kind":           "text",
+                "title_path":     "",
+                "title_level":    0,
+                "chunk_index":    idx,
+                "reading_order":  idx,
+                "prev_chunk":     idx - 1,
+                "next_chunk":     idx + 1,
+                "page_idx":       page_idx,
+                "token_count":    max(1, len(block.split())),
+                "html":           "",
+                "captions_json":  "[]",
+                "footnotes_json": "[]",
+                "bboxes_json":    "[]",
+                "entity":         entity or "",
+                **({"validity_date": validity_date} if validity_date else {}),
+            })
+            idx += 1
+    if chunk_dicts:
+        chunk_dicts[-1]["next_chunk"] = -1
+    return chunk_dicts
+
+
 def _ingest_simple(
     document_path: Path,
     source: str,
@@ -916,111 +747,74 @@ def _ingest_simple(
     entity: str | None = None,
     validity_date: str | None = None,
 ) -> tuple[list[dict], list[list[float]], list[list[float]]]:
-    """Fallback multimodal : PyMuPDF + markitdown + openingestion.SentenceChunker.
+    """Fallback robuste : extraction façon Onyx + chunking by_sentence.
 
-    Route chaque format vers le bon parseur, extrait les images embarquées,
-    les décrit optionnellement via un modèle de vision, puis chunke avec le
-    SentenceChunker d'openingestion pour préserver les frontières de phrases
-    et la hiérarchie des sections (title_path).
+    Délègue l'extraction au module ``parsing/`` (dispatch par format, texte à
+    plat page-aware + images + metadata), décrit optionnellement les images via
+    un modèle de vision, convertit en ContentBlock, puis chunke avec le
+    SentenceChunker d'openingestion (stratégie by_sentence) pour préserver les
+    frontières de phrases et la hiérarchie des titres (title_path). Le
+    ``page_idx`` est conservé jusqu'au chunk pour le visual grounding.
     """
+    from parsing.extract import SUPPORTED_EXTENSIONS, extract_document
+    from parsing.blocks import extraction_to_content_blocks
+
     _cb = progress_cb or (lambda m: None)
     ext = document_path.suffix.lower()
+    if ext not in SUPPORTED_EXTENSIONS:
+        raise RuntimeError(f"Format non supporté en mode simple : {ext or 'sans extension'}")
 
-    # ── [1] Parse texte selon le format ───────────────────────────────────────
-    try:
-        from openingestion.chunker.by_sentence import SentenceChunker as _OISentenceChunker
-        from openingestion.document import ContentBlock, BlockKind  # noqa: F401
-        _oi_chunker_ok = True
-    except ImportError:
-        _oi_chunker_ok = False
-        logger.warning("openingestion.SentenceChunker absent — fallback 800-chars activé.")
+    # ── [1] Extraction (dispatch robuste façon Onyx) ──────────────────────────
+    _cb(f"Extraction '{document_path.name}' (mode simple)…")
+    result = extract_document(document_path)
+    n_titles = sum(1 for s in result.segments if s.is_title)
+    _cb(
+        f"  {len(result.segments)} segment(s), {n_titles} titre(s), "
+        f"{len(result.images)} image(s)."
+    )
 
-    if ext == ".pdf":
-        _cb(f"Extraction structurée PDF '{document_path.name}'…")
-        try:
-            import fitz  # noqa: F401
-            doc_title, text_blocks = _parse_pdf_to_blocks(document_path)
-        except ImportError:
-            raise ImportError("pymupdf est requis en mode fallback : pip install pymupdf")
-    elif ext in (".docx", ".pptx", ".xlsx"):
-        _cb(f"Conversion Office '{document_path.name}' via markitdown…")
-        try:
-            doc_title, text_blocks = _parse_office_to_blocks(document_path)
-        except ImportError:
-            raise ImportError(
-                f"markitdown est requis pour ingérer les fichiers {ext} en mode simple : "
-                "pip install markitdown"
-            )
-    elif ext == ".txt":
-        _cb(f"Extraction texte brut '{document_path.name}'…")
-        doc_title, text_blocks = _parse_text_to_blocks(document_path)
-    else:
-        raise RuntimeError(f"Format non supporté en mode simple : {ext}")
-
-    n_titles = sum(1 for b in text_blocks if hasattr(b, "kind") and "TITLE" in str(b.kind).upper())
-    n_text   = len(text_blocks) - n_titles
-    _cb(f"  {n_text} blocs texte, {n_titles} titres détectés.")
-
-    # ── [2] Extraction images ──────────────────────────────────────────────────
-    images = _extract_doc_images(document_path)
-    if images:
-        _cb(f"  {len(images)} image(s) trouvée(s).")
-
-    # ── [3] Descriptions vision ────────────────────────────────────────────────
+    # ── [2] Descriptions vision (option d'enrichissement) ─────────────────────
     image_descriptions: list[tuple[str, int]] = []
-    if images:
+    if result.images:
         config = _load_ingestion_refinery_config()
         action = "vision LLM" if config.use_vision_refinery else "placeholders"
         _cb(f"  Traitement images ({action})…")
-        image_descriptions = _describe_images(images, api_key)
+        image_descriptions = _describe_images(
+            [(img.data, img.mime, img.page_idx) for img in result.images],
+            api_key,
+        )
 
-    # ── [4] Fusion blocs texte + images ────────────────────────────────────────
-    all_blocks = _build_and_merge_blocks(text_blocks, image_descriptions, len(text_blocks))
+    # ── [3] Chunking by_sentence (chemin normal) ──────────────────────────────
+    try:
+        from openingestion.chunker.by_sentence import SentenceChunker as _OISentenceChunker
+        _chunker_ok = True
+    except ImportError:
+        _chunker_ok = False
+        logger.warning(
+            "openingestion.SentenceChunker absent — fallback 800-chars (dernier recours)."
+        )
 
-    # ── [5] Chunking ───────────────────────────────────────────────────────────
-    if _oi_chunker_ok and all_blocks:
+    if _chunker_ok:
+        blocks = extraction_to_content_blocks(result, image_descriptions)
+        if not blocks:
+            _cb("  Aucun contenu exploitable extrait.")
+            return [], [], []
         _cb(f"Chunking par phrases (chunk_size={chunk_size} tokens)…")
         chunker = _OISentenceChunker(chunk_size=chunk_size, chunk_overlap=0)
-        rag_chunks = chunker(all_blocks, source=source)
-        _cb(f"  {len(rag_chunks)} chunks créés (mode simple+openingestion).")
+        rag_chunks = chunker(blocks, source=source)
+        _cb(f"  {len(rag_chunks)} chunks créés (mode simple + by_sentence).")
         chunk_dicts = _rag_chunks_to_dicts(rag_chunks, source, entity, validity_date)
     else:
-        # Fallback 800-chars si SentenceChunker absent
-        _cb(f"Chunking naïf (fallback 800 chars)…")
-        chunk_dicts = []
-        idx = 0
-        for b in all_blocks:
-            text = b.text if hasattr(b, "text") else str(b)
-            page_idx = b.page_idx if hasattr(b, "page_idx") else 0
-            for start in range(0, len(text), 800):
-                block = text[start: start + 800].strip()
-                if not block:
-                    continue
-                chunk_dicts.append({
-                    "page_content":   block,
-                    "source":         source,
-                    "kind":           "text",
-                    "title_path":     "",
-                    "title_level":    0,
-                    "chunk_index":    idx,
-                    "reading_order":  idx,
-                    "prev_chunk":     idx - 1,
-                    "next_chunk":     idx + 1,
-                    "page_idx":       page_idx,
-                    "token_count":    max(1, len(block.split())),
-                    "html":           "",
-                    "captions_json":  "[]",
-                    "footnotes_json": "[]",
-                    "bboxes_json":    "[]",
-                    "entity":         entity or "",
-                    **({"validity_date": validity_date} if validity_date else {}),
-                })
-                idx += 1
-        if chunk_dicts:
-            chunk_dicts[-1]["next_chunk"] = -1
+        _cb("Chunking naïf (fallback 800 chars)…")
+        chunk_dicts = _naive_chunk_segments(
+            result, image_descriptions, source, entity, validity_date
+        )
         _cb(f"  {len(chunk_dicts)} chunks créés (fallback naïf).")
 
-    # ── [6] Embedding ──────────────────────────────────────────────────────────
+    if not chunk_dicts:
+        return [], [], []
+
+    # ── [4] Embedding (inchangé) ──────────────────────────────────────────────
     _cb("Embedding des chunks (Modèle d'embedding)…")
     content_vectors, title_vectors = _embed_content_and_titles(
         chunk_dicts, api_key, embedding_model, _cb
@@ -1040,7 +834,7 @@ def ingest_document(
     weaviate_store,
     api_key: str,
     embedding_model: str = "text-embedding-3-small",
-    chunking_strategy: str = "by_token",
+    chunking_strategy: str = "by_sentence",
     parser: str = "docling",
     progress_cb: Callable[[str], None] | None = None,
     force_simple: bool = False,
@@ -1067,8 +861,9 @@ def ingest_document(
     progress_cb:
         Callback appelé avec des messages de progression (pour l'UI).
     force_simple:
-        Si True, utilise le mode PyMuPDF même si openingestion est dispo.
-        Ce mode n'est supporté que pour les PDFs.
+        Si True, utilise le mode d'extraction simple (façon Onyx) même si le
+        pipeline openingestion mineru/docling est disponible.
+        Supporte : PDF, DOCX, PPTX, XLSX, TXT.
     source_override:
         Si renseigné, remplace la valeur par défaut (chemin absolu du document)
         pour le champ ``source`` stocké dans Weaviate.  Utilisé par l'API
@@ -1082,7 +877,9 @@ def ingest_document(
     """
     _cb = progress_cb or (lambda msg: logger.info(msg))
     if force_simple and not _supports_simple_fallback(file_path):
-        raise ValueError("Le parser simple n'est supporté que pour les fichiers PDF.")
+        raise ValueError(
+            "Le parser simple ne supporte que : PDF, DOCX, PPTX, XLSX, TXT."
+        )
 
     source = source_override or str(file_path.resolve())
     rfc3339_date: str | None = f"{validity_date}T00:00:00Z" if validity_date else None
@@ -1152,7 +949,7 @@ def ingest_pdf(
     weaviate_store,
     api_key: str,
     embedding_model: str = "text-embedding-3-small",
-    chunking_strategy: str = "by_token",
+    chunking_strategy: str = "by_sentence",
     parser: str = "docling",
     progress_cb: Callable[[str], None] | None = None,
     force_simple: bool = False,

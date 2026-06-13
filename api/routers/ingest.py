@@ -44,10 +44,14 @@ def _guess_content_type(filename: str) -> str:
 
 
 def _check_parser_support_for_file(parser: str, filename: str) -> None:
-    if parser == "simple" and Path(filename).suffix.lower() != ".pdf":
+    if parser != "simple":
+        return
+    from parsing.extract import SUPPORTED_EXTENSIONS
+
+    if Path(filename).suffix.lower() not in SUPPORTED_EXTENSIONS:
         raise HTTPException(
             status_code=400,
-            detail="Le parser simple n'est supporté que pour les fichiers PDF.",
+            detail="Le parser simple supporte : PDF, DOCX, PPTX, XLSX, TXT.",
         )
 
 
