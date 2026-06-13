@@ -119,6 +119,7 @@ def create_app() -> FastAPI:
     # ── Routers ───────────────────────────────────────────────────────────────
     from .routers import ingest, query, sources, feedback, documents, jobs, connectors, entities, sessions
     from .routers import models as models_router
+    from .routers import connector_configs
     from .auth import fastapi_users, auth_backend, UserRead, UserCreate, UserUpdate
 
     # Authentification
@@ -136,6 +137,7 @@ def create_app() -> FastAPI:
     app.include_router(feedback.router,   prefix="/feedback",   tags=["feedback"])
     app.include_router(documents.router,  prefix="/documents",  tags=["documents"])
     app.include_router(jobs.router,       prefix="/jobs",       tags=["jobs"])
+    app.include_router(connector_configs.router, prefix="/connectors/configs", tags=["connectors"])
     app.include_router(connectors.router, prefix="/connectors", tags=["connectors"])
     app.include_router(sessions.router,   prefix="/sessions",   tags=["sessions"])
     app.include_router(models_router.router, prefix="/models",  tags=["models"])

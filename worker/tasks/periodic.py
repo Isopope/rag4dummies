@@ -20,6 +20,7 @@ Trois tâches :
 """
 from __future__ import annotations
 
+import json
 from datetime import datetime, timedelta, timezone
 
 from celery.utils.log import get_task_logger
@@ -116,8 +117,12 @@ def retry_stale_pending() -> dict:
 
     _logger.info("retry_stale_pending : %d document(s) relancé(s)", len(docs))
     for doc in docs:
+        # object_key = pointeur de stockage (download) ; source = identité stable.
+        # Fallback legacy : source_path tenait lieu d'object_key avant le découplage.
+        object_key = doc.object_key or doc.source_path
         ingest_pdf_task.apply_async(
-            args     = [doc.source_path, doc.parser or "mineru", doc.strategy or "by_sentence", doc.filename or ""],
+            args     = [object_key, doc.parser or "mineru", doc.strategy or "by_sentence", doc.filename or ""],
+            kwargs   = {"source": doc.source_path},
             queue    = INGEST_QUEUE,
             priority = int(RagCeleryPriority.LOW),
         )
@@ -139,8 +144,10 @@ def retry_error_documents() -> dict:
     _logger.info("retry_error_documents : %d document(s) relancé(s)", len(docs))
     dispatched_paths = []
     for doc in docs:
+        object_key = doc.object_key or doc.source_path
         ingest_pdf_task.apply_async(
-            args     = [doc.source_path, doc.parser or "mineru", doc.strategy or "by_sentence", doc.filename or ""],
+            args     = [object_key, doc.parser or "mineru", doc.strategy or "by_sentence", doc.filename or ""],
+            kwargs   = {"source": doc.source_path},
             queue    = INGEST_QUEUE,
             priority = int(RagCeleryPriority.LOW),
         )
@@ -148,6 +155,80 @@ def retry_error_documents() -> dict:
 
     _increment_retry_count(dispatched_paths)
     return {"dispatched": len(dispatched_paths)}
+
+
+@celery_app.task(
+    name  = "rag.tasks.dispatch_due_connector_syncs",
+    queue = LIGHT_QUEUE,
+)
+def dispatch_due_connector_syncs() -> dict:
+    """Dispatche la sync delta des sources de connecteurs dont la cadence est échue."""
+    from worker.tasks.connectors import sync_sharepoint_task
+
+    now = datetime.now(timezone.utc)
+
+    def _list_due() -> list[dict]:
+        async def _inner():
+            from db.engine import get_session_factory
+            from db.repositories.connector_config import ConnectorConfigRepository
+            async with get_session_factory()() as session:
+                repo = ConnectorConfigRepository(session)
+                configs = await repo.list_due(now)
+                # Snapshot des champs nécessaires (hors session)
+                return [
+                    {
+                        "id": str(c.id),
+                        "connector_type": c.connector_type,
+                        "config_json": c.config_json,
+                        "parser": c.parser,
+                        "strategy": c.strategy,
+                        "entity": c.entity,
+                        "prune": c.prune,
+                    }
+                    for c in configs
+                ]
+        return run_async(_inner())
+
+    def _mark(config_id: str, task_id: str) -> None:
+        import uuid as _uuid
+        async def _inner():
+            from db.engine import get_session_factory
+            from db.repositories.connector_config import ConnectorConfigRepository
+            async with get_session_factory()() as session:
+                repo = ConnectorConfigRepository(session)
+                await repo.mark_dispatched(_uuid.UUID(config_id), task_id, now)
+                await session.commit()
+        run_async(_inner())
+
+    due = _list_due()
+    dispatched = 0
+    for cfg in due:
+        if cfg["connector_type"] != "sharepoint":
+            _logger.warning("Type de connecteur non géré pour la sync planifiée : %s", cfg["connector_type"])
+            continue
+        try:
+            params = json.loads(cfg["config_json"] or "{}")
+        except json.JSONDecodeError:
+            params = {}
+        job = sync_sharepoint_task.apply_async(
+            kwargs = {
+                "site_url":    params.get("site_url"),
+                "site_name":   params.get("site_name"),
+                "folder_path": params.get("folder_path"),
+                "parser":      cfg["parser"],
+                "strategy":    cfg["strategy"],
+                "entity":      cfg["entity"],
+                "prune":       cfg["prune"],
+            },
+            queue    = LIGHT_QUEUE,
+            priority = int(RagCeleryPriority.MEDIUM),
+        )
+        _mark(cfg["id"], job.id)
+        dispatched += 1
+
+    if dispatched:
+        _logger.info("dispatch_due_connector_syncs : %d source(s) synchronisée(s)", dispatched)
+    return {"dispatched": dispatched}
 
 
 @celery_app.task(

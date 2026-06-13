@@ -841,6 +841,7 @@ def ingest_document(
     source_override: str | None = None,
     entity: str | None = None,
     validity_date: str | None = None,
+    object_key: str | None = None,
 ) -> int:
     """Parse un document, embed ses chunks via OpenAI Embeddings et les stocke dans Weaviate.
 
@@ -932,6 +933,8 @@ def ingest_document(
     provider = _embedding_provider(embedding_model)
     dim = len(content_vectors[0]) if content_vectors else None
     for chunk in chunk_dicts:
+        # Pointeur de stockage (distinct de l'identité `source`) pour la présignature PDF.
+        chunk["object_key"] = object_key or ""
         enrich_chunk_for_embedding(
             chunk,
             embedding_model=embedding_model,
@@ -956,6 +959,7 @@ def ingest_pdf(
     source_override: str | None = None,
     entity: str | None = None,
     validity_date: str | None = None,
+    object_key: str | None = None,
 ) -> int:
     """Alias rétrocompatible vers ingest_document pour les chemins historiques."""
     return ingest_document(
@@ -970,6 +974,7 @@ def ingest_pdf(
         source_override=source_override,
         entity=entity,
         validity_date=validity_date,
+        object_key=object_key,
     )
 
 
@@ -982,6 +987,7 @@ def ingest_jsonl(
     embedding_model: str = "text-embedding-3-small",
     progress_cb: Callable[[str], None] | None = None,
     source_override: str | None = None,
+    object_key: str | None = None,
 ) -> int:
     """Ingère un fichier JSONL de chunks pré-découpés (format openingestion) dans Weaviate.
 
@@ -1058,6 +1064,7 @@ def ingest_jsonl(
             "captions_json": _json.dumps(captions, ensure_ascii=False),
             "footnotes_json": "[]",
             "bboxes_json":   _json.dumps(pos, ensure_ascii=False),
+            "object_key":    object_key or "",
         })
 
     _cb("Embedding des chunks (Modèle d'embedding)…")

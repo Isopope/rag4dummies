@@ -76,15 +76,21 @@ async def _submit_document_ingest(
         if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", validity_date):
             raise HTTPException(status_code=400, detail="validity_date doit être au format YYYY-MM-DD")
 
+    import hashlib
+
     filename = file.filename or default_filename
     _check_extension(filename, allowed_extensions)
     _check_parser_support_for_file(parser, filename)
     content = await file.read()
     _check_file_size(content, filename)
 
-    object_key = DocumentStore.make_object_key(filename, content)
+    object_key   = DocumentStore.make_object_key(filename, content)
+    content_hash = hashlib.sha256(content).hexdigest()
+    # Identité stable d'un upload = son nom de fichier : re-uploader le même nom
+    # avec un contenu modifié remplace l'ancienne version (pas de doublon).
+    stable_source = filename
 
-    # 1. Upload dans l'object store
+    # 1. Upload dans l'object store (clé adressée par contenu)
     doc_store.upload(content, object_key, content_type=_guess_content_type(filename))
 
     task_id = str(uuid.uuid4())
@@ -93,10 +99,13 @@ async def _submit_document_ingest(
     from db.repositories.document import DocumentRepository
     repo = DocumentRepository(db)
     await repo.upsert(
-        object_key,
+        stable_source,
         parser=parser,
         strategy=strategy,
         task_id=task_id,
+        object_key=object_key,
+        content_hash=content_hash,
+        filename=filename,
         entity=entity,
         validity_date=validity_date,
     )
@@ -109,7 +118,7 @@ async def _submit_document_ingest(
         celery.send_task(
             "rag.tasks.ingest_pdf",
             args=[object_key, parser, strategy, filename],
-            kwargs={"entity": entity, "validity_date": validity_date},
+            kwargs={"entity": entity, "validity_date": validity_date, "source": stable_source},
             task_id=task_id,
             queue=INGEST_QUEUE,
             priority=int(RagCeleryPriority.HIGH),

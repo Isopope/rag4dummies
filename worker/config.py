@@ -71,4 +71,11 @@ beat_schedule = {
         "schedule": 3600.0,  # toutes les heures
         "options":  {"queue": LIGHT_QUEUE, "priority": int(RagCeleryPriority.LOW)},
     },
+    # Dispatche la sync delta des sources de connecteurs dont la cadence est échue
+    # (la vraie cadence est interval_seconds par source ; ici on vérifie l'échéance).
+    "dispatch-due-connector-syncs": {
+        "task":     "rag.tasks.dispatch_due_connector_syncs",
+        "schedule": 600.0,   # vérifie toutes les 10 min
+        "options":  {"queue": LIGHT_QUEUE, "priority": int(RagCeleryPriority.LOW)},
+    },
 }

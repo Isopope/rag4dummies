@@ -329,6 +329,8 @@ export interface DocumentItem {
   id: string;
   filename: string;
   source_path: string;
+  /** Clé de stockage (URL-safe) — handle de suppression/téléchargement. */
+  object_key: string | null;
   status: 'pending' | 'processing' | 'indexed' | 'error';
   chunk_count: number;
   parser: string | null;
@@ -369,8 +371,10 @@ export async function listDocuments(
   return res.json();
 }
 
-export async function deleteDocument(sourcePath: string, token: string): Promise<void> {
-  const res = await fetch(`${BASE}/documents/${encodeURIComponent(sourcePath)}`, {
+/** Supprime un document. `handle` = object_key (clé de stockage, URL-safe) de
+ *  préférence ; retombe sur source_path pour les documents legacy. */
+export async function deleteDocument(handle: string, token: string): Promise<void> {
+  const res = await fetch(`${BASE}/documents/${encodeURIComponent(handle)}`, {
     method: 'DELETE',
     headers: jsonHeaders(token),
   });
@@ -522,6 +526,84 @@ export async function crawlSharepoint(body: CrawlSharepointRequest, token: strin
     method: 'POST',
     headers: jsonHeaders(token),
     body: JSON.stringify(body),
+  });
+  await assertOk(res);
+  return res.json();
+}
+
+// ── Sources planifiées (connector_config) ─────────────────────────────────────
+
+export interface ConnectorConfigPayload {
+  name: string;
+  connector_type?: string;
+  site_url?: string | null;
+  site_name?: string | null;
+  folder_path?: string | null;
+  parser?: string;
+  strategy?: string;
+  entity?: string | null;
+  prune?: boolean;
+  interval_seconds?: number;
+  enabled?: boolean;
+}
+
+export interface ConnectorConfigItem {
+  id: string;
+  name: string;
+  connector_type: string;
+  enabled: boolean;
+  site_url: string | null;
+  site_name: string | null;
+  folder_path: string | null;
+  parser: string;
+  strategy: string;
+  entity: string | null;
+  prune: boolean;
+  interval_seconds: number;
+  last_sync_at: string | null;
+  last_task_id: string | null;
+  last_status: string | null;
+  created_at: string;
+}
+
+export async function listConnectorConfigs(token: string): Promise<ConnectorConfigItem[]> {
+  const res = await fetch(`${BASE}/connectors/configs`, { headers: jsonHeaders(token) });
+  await assertOk(res);
+  return res.json();
+}
+
+export async function createConnectorConfig(body: ConnectorConfigPayload, token: string): Promise<ConnectorConfigItem> {
+  const res = await fetch(`${BASE}/connectors/configs`, {
+    method: 'POST',
+    headers: jsonHeaders(token),
+    body: JSON.stringify(body),
+  });
+  await assertOk(res);
+  return res.json();
+}
+
+export async function updateConnectorConfig(id: string, body: Partial<ConnectorConfigPayload>, token: string): Promise<ConnectorConfigItem> {
+  const res = await fetch(`${BASE}/connectors/configs/${id}`, {
+    method: 'PATCH',
+    headers: jsonHeaders(token),
+    body: JSON.stringify(body),
+  });
+  await assertOk(res);
+  return res.json();
+}
+
+export async function deleteConnectorConfig(id: string, token: string): Promise<void> {
+  const res = await fetch(`${BASE}/connectors/configs/${id}`, {
+    method: 'DELETE',
+    headers: jsonHeaders(token),
+  });
+  await assertOk(res);
+}
+
+export async function runConnectorConfig(id: string, token: string): Promise<CrawlJobResponse> {
+  const res = await fetch(`${BASE}/connectors/configs/${id}/run`, {
+    method: 'POST',
+    headers: jsonHeaders(token),
   });
   await assertOk(res);
   return res.json();

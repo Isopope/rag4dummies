@@ -42,6 +42,7 @@ class CitationInfoModel(BaseModel):
 
 class ChunkModel(BaseModel):
     source: str
+    object_key: str = ""
     page_content: str
     page_idx: int = 0
     kind: str = "text"
@@ -171,6 +172,7 @@ class CrawlLocalRequest(BaseModel):
     strategy: str   = Field("by_sentence", description="by_token | by_sentence | by_block")
     entity: Optional[str]        = Field(None, description="Entité propriétaire (ex. 'dassault')")
     validity_date: Optional[str] = Field(None, description="Date de validité ISO YYYY-MM-DD")
+    prune: bool     = Field(False, description="Supprimer les documents absents de la source (détection de suppression)")
 
 
 class CrawlWebRequest(BaseModel):
@@ -196,6 +198,56 @@ class CrawlSharepointRequest(BaseModel):
     tenant_id: Optional[str]     = Field(None, description="Tenant ID Azure AD")
     entity: Optional[str]        = Field(None, description="Entité propriétaire")
     validity_date: Optional[str] = Field(None, description="Date de validité ISO YYYY-MM-DD")
+    prune: bool                  = Field(False, description="Supprimer les documents du site/dossier absents de la source")
+
+
+class ConnectorConfigRequest(BaseModel):
+    """Création d'une source de connecteur synchronisée périodiquement."""
+    name: str = Field(..., min_length=1, description="Nom d'affichage")
+    connector_type: str = Field("sharepoint", description="sharepoint (seul type planifié pour l'instant)")
+    site_url: Optional[str]  = Field(None, description="URL complète du site SharePoint")
+    site_name: Optional[str] = Field(None, description="Nom court du site (alternatif)")
+    folder_path: Optional[str] = Field(None, description="Sous-dossier (None = racine)")
+    parser: str   = Field("mineru", description="docling | mineru | simple")
+    strategy: str = Field("by_sentence", description="by_token | by_sentence | by_block")
+    entity: Optional[str] = Field(None, description="Entité propriétaire")
+    prune: bool   = Field(True, description="Supprimer les docs absents de la source")
+    interval_seconds: int = Field(604800, ge=300, description="Cadence en secondes (défaut 7 j)")
+    enabled: bool = Field(True, description="Source active (planifiée)")
+
+
+class ConnectorConfigUpdate(BaseModel):
+    """Mise à jour partielle d'une source planifiée (champs optionnels)."""
+    name: Optional[str] = None
+    site_url: Optional[str] = None
+    site_name: Optional[str] = None
+    folder_path: Optional[str] = None
+    parser: Optional[str] = None
+    strategy: Optional[str] = None
+    entity: Optional[str] = None
+    prune: Optional[bool] = None
+    interval_seconds: Optional[int] = Field(None, ge=300)
+    enabled: Optional[bool] = None
+
+
+class ConnectorConfigResponse(BaseModel):
+    """Source planifiée telle que retournée par l'API."""
+    id: str
+    name: str
+    connector_type: str
+    enabled: bool
+    site_url: Optional[str] = None
+    site_name: Optional[str] = None
+    folder_path: Optional[str] = None
+    parser: str
+    strategy: str
+    entity: Optional[str] = None
+    prune: bool
+    interval_seconds: int
+    last_sync_at: Optional[str] = None
+    last_task_id: Optional[str] = None
+    last_status: Optional[str] = None
+    created_at: str
 
 
 class CrawlTaskItem(BaseModel):

@@ -228,7 +228,7 @@ const FileUploadZone = ({
                 <FileRow
                   key={file.id}
                   file={file}
-                  sourcePath={doc?.source_path}
+                  sourcePath={doc?.object_key ?? doc?.source_path}
                   errorMessage={doc?.error_message}
                   onDelete={onDelete}
                 />

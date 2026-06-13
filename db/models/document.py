@@ -30,11 +30,29 @@ class Document(Base):
     id: Mapped[uuid.UUID] = mapped_column(
         primary_key=True, default=uuid.uuid4
     )
-    # Chemin absolu du fichier — clé unique de réconciliation avec Weaviate
+    # Identité stable du document (chemin/URL source, ou nom de fichier pour les
+    # uploads manuels) — clé unique de réconciliation avec Weaviate (champ `source`).
     source_path: Mapped[str] = mapped_column(
         String(1000), unique=True, index=True
     )
     filename: Mapped[str] = mapped_column(String(500))
+
+    # Pointeur de stockage : clé MinIO/locale où sont les octets courants
+    # (adressée par contenu). Distincte de l'identité (source_path).
+    object_key: Mapped[str | None] = mapped_column(
+        String(1000), nullable=True, index=True
+    )
+    # Hash sha256 du dernier contenu ingéré — détecteur de changement (skip si inchangé).
+    content_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    # Horodatage de dernière modification à la source (ex. SharePoint lastModifiedDateTime)
+    # — base du delta sync (ne re-télécharge que si plus récent).
+    source_updated_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    # Scope de connecteur pour le pruning (ex. 'local:/abs/dir', 'sharepoint:<site>:<folder>').
+    source_scope: Mapped[str | None] = mapped_column(
+        String(1000), nullable=True, index=True
+    )
 
     # Statut d'ingestion
     status: Mapped[str] = mapped_column(

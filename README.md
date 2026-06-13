@@ -115,6 +115,13 @@ La barre latérale permet de :
 
 ---
 
+## Documentation
+
+- [Synchronisation SharePoint](docs/sharepoint-sync.md) — configuration SharePoint,
+  politique de mise à jour des documents, et réindexation différentielle (delta).
+
+---
+
 ## Structure du projet
 
 ```

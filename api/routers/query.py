@@ -67,6 +67,7 @@ def _parse_bboxes(raw: str | None) -> list[BboxModel]:
 def _chunk_to_model(doc: dict) -> ChunkModel:
     return ChunkModel(
         source       = doc.get("source", ""),
+        object_key   = doc.get("object_key", "") or "",
         page_content = doc.get("page_content", ""),
         page_idx     = doc.get("page_idx", 0),
         kind         = doc.get("kind", "text"),
@@ -87,17 +88,19 @@ def _add_pdf_urls(chunks: list[ChunkModel], doc_store, expires_seconds: int = 36
     expires = int(os.getenv("MINIO_PRESIGN_EXPIRES", str(expires_seconds)))
     url_cache: dict[str, str] = {}
     for chunk in chunks:
-        source = chunk.source
-        if not source:
+        # Clé de stockage = object_key (pointeur) ; fallback sur source pour les
+        # documents legacy indexés avant le découplage identité/stockage.
+        storage_key = chunk.object_key or chunk.source
+        if not storage_key:
             continue
-        if source not in url_cache:
+        if storage_key not in url_cache:
             try:
-                url_cache[source] = doc_store.presigned_url(source, expires_seconds=expires)
+                url_cache[storage_key] = doc_store.presigned_url(storage_key, expires_seconds=expires)
             except Exception as exc:
-                logger.warning("Impossible de générer la presigned URL pour '{}' : {}", source, exc)
-                url_cache[source] = ""
-        if url_cache[source]:
-            chunk.pdf_url = url_cache[source]
+                logger.warning("Impossible de générer la presigned URL pour '{}' : {}", storage_key, exc)
+                url_cache[storage_key] = ""
+        if url_cache[storage_key]:
+            chunk.pdf_url = url_cache[storage_key]
     return chunks
 
 

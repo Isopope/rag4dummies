@@ -28,8 +28,17 @@ class DocumentRepository:
         task_id: str | None = None,
         entity: str | None = None,
         validity_date: str | None = None,
+        object_key: str | None = None,
+        content_hash: str | None = None,
+        source_scope: str | None = None,
+        filename: str | None = None,
+        source_updated_at: "datetime | None" = None,
     ) -> Document:
         """Crée ou récupère un Document pour ce source_path, statut PENDING.
+
+        ``source_path`` est l'identité stable (chemin/URL source, ou nom de
+        fichier pour un upload). ``object_key`` est le pointeur de stockage
+        (clé MinIO/locale, adressée par contenu) — distinct de l'identité.
 
         Appelé au début de l'ingestion pour enregistrer le document.
         """
@@ -38,13 +47,17 @@ class DocumentRepository:
             from datetime import date as _date
             doc = Document(
                 source_path   = source_path,
-                filename      = Path(source_path).name,
+                filename      = filename or Path(source_path).name,
                 status        = DocumentStatus.PENDING,
                 parser        = parser,
                 strategy      = strategy,
                 task_id       = task_id,
                 entity        = entity,
                 validity_date = _date.fromisoformat(validity_date) if validity_date else None,
+                object_key    = object_key,
+                content_hash  = content_hash,
+                source_scope  = source_scope,
+                source_updated_at = source_updated_at,
             )
             self._session.add(doc)
             await self._session.flush()
@@ -62,6 +75,16 @@ class DocumentRepository:
             if validity_date is not None:
                 from datetime import date as _date
                 doc.validity_date = _date.fromisoformat(validity_date)
+            if object_key is not None:
+                doc.object_key = object_key
+            if content_hash is not None:
+                doc.content_hash = content_hash
+            if source_scope is not None:
+                doc.source_scope = source_scope
+            if filename:
+                doc.filename = filename
+            if source_updated_at is not None:
+                doc.source_updated_at = source_updated_at
         return doc
 
     async def mark_processing(self, source_path: str) -> Document | None:
@@ -70,12 +93,16 @@ class DocumentRepository:
             doc.status = DocumentStatus.PROCESSING
         return doc
 
-    async def mark_indexed(self, source_path: str, chunk_count: int) -> Document | None:
+    async def mark_indexed(
+        self, source_path: str, chunk_count: int, content_hash: str | None = None
+    ) -> Document | None:
         doc = await self.get_by_source(source_path)
         if doc:
             doc.status      = DocumentStatus.INDEXED
             doc.chunk_count = chunk_count
             doc.ingested_at = datetime.now(timezone.utc)
+            if content_hash is not None:
+                doc.content_hash = content_hash
         return doc
 
     async def mark_error(self, source_path: str, error_message: str) -> Document | None:
@@ -99,6 +126,12 @@ class DocumentRepository:
         )
         return result.scalar_one_or_none()
 
+    async def get_by_object_key(self, object_key: str) -> Document | None:
+        result = await self._session.execute(
+            select(Document).where(Document.object_key == object_key)
+        )
+        return result.scalar_one_or_none()
+
     async def get_by_task_id(self, task_id: str) -> Document | None:
         result = await self._session.execute(
             select(Document).where(Document.task_id == task_id)
@@ -108,6 +141,15 @@ class DocumentRepository:
     async def list_source_paths(self) -> list[str]:
         result = await self._session.execute(select(Document.source_path))
         return [source_path for source_path in result.scalars().all() if source_path]
+
+    async def list_indexed_by_scope(self, source_scope: str) -> list[Document]:
+        """Documents INDEXED rattachés à un scope de connecteur (pour le pruning)."""
+        result = await self._session.execute(
+            select(Document)
+            .where(Document.source_scope == source_scope)
+            .where(Document.status == DocumentStatus.INDEXED)
+        )
+        return list(result.scalars().all())
 
     async def list_all(
         self,

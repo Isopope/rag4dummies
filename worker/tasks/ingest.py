@@ -143,6 +143,7 @@ def ingest_pdf_task(
     filename: str  = "",
     entity: str | None = None,
     validity_date: str | None = None,
+    source: str | None = None,
 ) -> dict:
     """
     Télécharge le document depuis le DocumentStore, l'ingère dans Weaviate et met
@@ -150,18 +151,25 @@ def ingest_pdf_task(
 
     Paramètres
     ----------
-    object_key : clé MinIO/locale du fichier (= valeur stockée dans Weaviate.source)
+    object_key : clé MinIO/locale du fichier (pointeur de stockage, pour le download)
     parser     : docling | mineru | simple
     strategy   : by_token | by_sentence | by_block
     filename   : nom d'affichage (pour les logs)
     entity     : métadonnée métier conservée côté DB
     validity_date : date de validité métier conservée côté DB
+    source     : identité stable du document (chemin/URL/nom de fichier). Sert de
+                 champ ``source`` Weaviate et de clé DB. Si absent, retombe sur
+                 ``object_key`` (rétrocompatibilité).
 
     Retourne
     --------
-    dict avec {object_key, chunk_count, status}
+    dict avec {object_key, source, chunk_count, status}
     """
-    _task_logger.info("Début ingestion document | task=%s object_key=%s", self.request.id, object_key)
+    identity = source or object_key
+    _task_logger.info(
+        "Début ingestion document | task=%s source=%s object_key=%s",
+        self.request.id, identity, object_key,
+    )
 
     tmp_path: Path | None = None
     store = None
@@ -170,16 +178,16 @@ def ingest_pdf_task(
         if parser == "simple" and suffix != ".pdf":
             raise ValueError("Le parser simple n'est supporté que pour les fichiers PDF.")
 
-        # 1. Marquer PROCESSING en DB
-        _db_mark_processing(object_key)
+        # 1. Marquer PROCESSING en DB (clé = identité stable)
+        _db_mark_processing(identity)
 
-        # 2. Télécharger vers un tmpfile
+        # 2. Télécharger vers un tmpfile (depuis le pointeur de stockage)
         tmp_path = _download_to_tmp(object_key, suffix=suffix)
 
         # 3. Connexion Weaviate
         store, cfg = _build_weaviate_store()
 
-        # 4. Ingestion
+        # 4. Ingestion (source_override = identité stable → delete_source remplace)
         from ingestor import ingest_document as _ingest_document
         with track_usage() as usage_tracker:
             n = _ingest_document(
@@ -190,28 +198,29 @@ def ingest_pdf_task(
                 chunking_strategy = strategy,
                 parser            = parser if parser != "simple" else "docling",
                 force_simple      = (parser == "simple"),
-                source_override   = object_key,
+                source_override   = identity,
+                object_key        = object_key,
                 entity            = entity,
                 validity_date     = validity_date,
             )
         usage = usage_tracker.snapshot()
 
         # 5. Marquer INDEXED en DB
-        _db_mark_indexed(object_key, n)
+        _db_mark_indexed(identity, n)
         _task_logger.info(
-            "Ingestion OK | task=%s object_key=%s chunks=%d embedding_cost_usd=%.8f",
+            "Ingestion OK | task=%s source=%s chunks=%d embedding_cost_usd=%.8f",
             self.request.id,
-            object_key,
+            identity,
             n,
             float(usage.get("embeddings", {}).get("cost_usd", 0.0) or 0.0),
         )
 
-        return {"object_key": object_key, "chunk_count": n, "status": "indexed", "usage": usage}
+        return {"object_key": object_key, "source": identity, "chunk_count": n, "status": "indexed", "usage": usage}
 
     except SoftTimeLimitExceeded:
-        msg = f"Timeout dépassé pour '{object_key}'"
+        msg = f"Timeout dépassé pour '{identity}'"
         _task_logger.error(msg)
-        _db_mark_error(object_key, msg)
+        _db_mark_error(identity, msg)
         raise   # ne pas retenter un timeout
 
     except Exception as exc:
@@ -221,7 +230,7 @@ def ingest_pdf_task(
             self.request.id, self.request.retries + 1, MAX_RETRIES, exc, retry_in,
         )
         if self.request.retries >= MAX_RETRIES:
-            _db_mark_error(object_key, str(exc))
+            _db_mark_error(identity, str(exc))
             raise
         raise self.retry(exc=exc, countdown=retry_in)
 
@@ -280,6 +289,7 @@ def ingest_jsonl_task(
                 api_key         = cfg.openai_key,
                 embedding_model = cfg.embedding_model,
                 source_override = source_override,
+                object_key      = object_key,
             )
         usage = usage_tracker.snapshot()
 

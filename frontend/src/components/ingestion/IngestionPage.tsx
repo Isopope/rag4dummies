@@ -2,6 +2,7 @@ import { Search } from 'lucide-react';
 import ConnectorCard from './ConnectorCard';
 import ConnectorModal from './ConnectorModal';
 import FileUploadZone from './FileUploadZone';
+import ScheduledSourcesPanel from './ScheduledSourcesPanel';
 import type { UploadedFile } from '@/types/chat';
 import type { DocumentItem, DocumentListStats } from '@/lib/api';
 import { useState } from 'react';
@@ -62,11 +63,15 @@ const IngestionPage = ({
 
   const { connectors, launch } = useConnectors();
 
-  const filteredConnectors = connectors.filter((c) =>
+  // SharePoint est géré via le panneau « Sources planifiées » (sync delta) — on
+  // n'expose plus la carte de crawl ponctuel pour éviter la redondance.
+  const visibleConnectors = connectors.filter((c) => c.type !== 'sharepoint');
+
+  const filteredConnectors = visibleConnectors.filter((c) =>
     c.name.toLowerCase().includes(search.toLowerCase()),
   );
 
-  const activeConnectors = connectors.filter(
+  const activeConnectors = visibleConnectors.filter(
     (c) => c.status === 'connected' || c.status === 'syncing' || c.status === 'queued' || c.status === 'degraded',
   ).length;
 
@@ -95,7 +100,7 @@ const IngestionPage = ({
 
         <div className="mb-8 grid grid-cols-1 gap-4 sm:grid-cols-3">
           {[
-            { label: 'Connecteurs actifs', value: activeConnectors, total: connectors.length },
+            { label: 'Connecteurs actifs', value: activeConnectors, total: visibleConnectors.length },
             { label: 'Chunks indexés', value: documentStats.total_chunks.toLocaleString() },
             { label: 'Documents indexés', value: documentStats.indexed_documents.toLocaleString() },
           ].map((stat, index) => (
@@ -146,15 +151,18 @@ const IngestionPage = ({
         </div>
 
         {activeTab === 'connectors' ? (
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
-            {filteredConnectors.map((connector) => (
-              <ConnectorCard
-                key={connector.type}
-                connector={connector}
-                onConfigure={setOpenModal}
-              />
-            ))}
-          </div>
+          <>
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
+              {filteredConnectors.map((connector) => (
+                <ConnectorCard
+                  key={connector.type}
+                  connector={connector}
+                  onConfigure={setOpenModal}
+                />
+              ))}
+            </div>
+            <ScheduledSourcesPanel />
+          </>
         ) : (
           <FileUploadZone
             uploadingFiles={activeUploads}

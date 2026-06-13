@@ -32,6 +32,7 @@ class DocumentItemResponse(BaseModel):
     id: str
     filename: str
     source_path: str
+    object_key: Optional[str] = None
     status: str
     chunk_count: int
     parser: Optional[str]
@@ -84,6 +85,7 @@ async def list_documents(
             id           = str(doc.id),
             filename     = doc.filename,
             source_path  = doc.source_path,
+            object_key   = doc.object_key,
             status       = doc.status,
             chunk_count  = doc.chunk_count,
             parser       = doc.parser,

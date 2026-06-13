@@ -77,7 +77,7 @@ async def find_tracked_source_for_indexed_source(indexed_source: str, *, repo, d
 
 
 async def delete_tracked_document(
-    source_path: str,
+    handle: str,
     *,
     repo,
     db_session,
@@ -87,31 +87,44 @@ async def delete_tracked_document(
 ) -> DocumentDeletionResult:
     """Supprime un document suivi dans toutes les surfaces du système.
 
+    ``handle`` peut être l'**identité stable** (source_path) ou la **clé de
+    stockage** (object_key) — le document est résolu par l'un ou l'autre.
+    La suppression Weaviate + DB se fait par l'identité (source_path, =
+    champ Weaviate ``source``), la suppression de fichier par l'object_key.
+
     La suppression externe (Weaviate + object store) est effectuée avant le
     commit SQL pour éviter un état DB « supprimé » alors que les chunks restent.
     """
-    doc = await repo.get_by_source(source_path)
+    doc = await repo.get_by_source(handle)
+    if doc is None:
+        doc = await repo.get_by_object_key(handle)
     if doc is None and require_db_record:
-        raise TrackedDocumentNotFoundError(source_path)
+        raise TrackedDocumentNotFoundError(handle)
 
-    candidates = indexed_source_candidates(source_path, doc_store)
+    # Identité (chunks Weaviate + clé DB) et clé de stockage (octets).
+    identity    = doc.source_path if doc is not None else handle
+    storage_key = (
+        doc.object_key if doc is not None and doc.object_key else identity
+    )
+
+    candidates = indexed_source_candidates(identity, doc_store)
     deleted_chunks = 0
     for indexed_source in candidates:
         deleted_chunks += int(weaviate_store.delete_source(indexed_source) or 0)
 
     deleted_file = False
-    if doc_store.exists(source_path):
-        doc_store.delete(source_path)
+    if doc_store.exists(storage_key):
+        doc_store.delete(storage_key)
         deleted_file = True
 
     deleted_db = False
     if doc is not None:
-        deleted_db = await repo.delete_by_source(source_path)
+        deleted_db = await repo.delete_by_source(doc.source_path)
         if deleted_db:
             await db_session.commit()
 
     return DocumentDeletionResult(
-        source_path=source_path,
+        source_path=identity,
         indexed_sources=tuple(candidates),
         deleted_db=deleted_db,
         deleted_file=deleted_file,

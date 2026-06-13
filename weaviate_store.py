@@ -151,6 +151,9 @@ class WeaviateStore:
                 ),
                 # ── métadonnées structurelles (filtrage / affichage) ──────
                 Property(name="source",        data_type=DataType.TEXT, skip_vectorization=True),
+                # Pointeur de stockage (clé MinIO/locale) — distinct de l'identité `source`,
+                # utilisé pour générer l'URL présignée du PDF.
+                Property(name="object_key",    data_type=DataType.TEXT, skip_vectorization=True),
                 Property(name="kind",          data_type=DataType.TEXT, skip_vectorization=True),
                 Property(name="chunk_index",   data_type=DataType.INT),
                 Property(name="page_idx",      data_type=DataType.INT),
@@ -213,6 +216,7 @@ class WeaviateStore:
             logger.info("invertedIndexConfig mis à jour (indexNullState=true) sur {}.", COLLECTION_NAME)
         existing_props = {p.name for p in cfg.properties}
         additions = [
+            ("object_key", Property(name="object_key", data_type=DataType.TEXT, skip_vectorization=True)),
             ("bboxes_json", Property(name="bboxes_json", data_type=DataType.TEXT, index_searchable=False, skip_vectorization=True)),
             ("entity", Property(name="entity", data_type=DataType.TEXT, skip_vectorization=True)),
             ("validity_date", Property(name="validity_date", data_type=DataType.DATE, skip_vectorization=True)),
